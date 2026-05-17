@@ -29,7 +29,7 @@ User games are separate `.csproj` projects that NuGet-reference Engine.Core + En
 - Avalonia 11.x
 - `System.Text.Json` (NOT Newtonsoft.Json) with custom `JsonConverter`s
 - `Microsoft.CodeAnalysis.CSharp` (Roslyn) for compiling user scripts
-- xUnit + FluentAssertions for tests
+- xUnit + AwesomeAssertions for tests (MIT-licensed community fork of FluentAssertions v7)
 
 When introducing a new dependency, justify it in the commit. Smaller surface area = easier to maintain a public release.
 

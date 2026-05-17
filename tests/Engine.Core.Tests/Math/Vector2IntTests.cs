@@ -1,5 +1,5 @@
 using Engine.Core.Math;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace Engine.Core.Tests.Math;
 

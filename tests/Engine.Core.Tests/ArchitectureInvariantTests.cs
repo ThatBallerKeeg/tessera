@@ -1,6 +1,6 @@
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace Engine.Core.Tests;
 
