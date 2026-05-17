@@ -16,4 +16,10 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.*" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Update="MainWindow.axaml.cs">
+      <DependentUpon>MainWindow.axaml</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
 </Project>

@@ -1,0 +1,106 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Engine.Editor.MainWindow"
+        Title="Tessera Engine Editor"
+        Width="1400"
+        Height="900"
+        MinWidth="800"
+        MinHeight="600">
+
+    <DockPanel>
+
+        <!-- Menu bar -->
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem x:Name="MenuNewScene"  Header="_New Scene" />
+                <MenuItem x:Name="MenuOpenScene" Header="_Open Scene..." />
+                <MenuItem x:Name="MenuSaveScene" Header="_Save Scene" />
+                <Separator />
+                <MenuItem x:Name="MenuExit"      Header="E_xit" />
+            </MenuItem>
+        </Menu>
+
+        <!-- Four-panel layout -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="200" MinWidth="120" />
+                <ColumnDefinition Width="4" />
+                <ColumnDefinition Width="*"   MinWidth="200" />
+                <ColumnDefinition Width="4" />
+                <ColumnDefinition Width="220" MinWidth="120" />
+            </Grid.ColumnDefinitions>
+
+            <!-- ── Left column: Scene (top) + Assets (bottom) ── -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"   MinHeight="100" />
+                    <RowDefinition Height="4" />
+                    <RowDefinition Height="180" MinHeight="80" />
+                </Grid.RowDefinitions>
+
+                <!-- Scene panel -->
+                <Border Grid.Row="0" Padding="6">
+                    <StackPanel>
+                        <TextBlock Text="SCENE"
+                                   FontSize="10"
+                                   FontWeight="Bold"
+                                   Margin="0,0,0,8" />
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Left"
+                                       Text="Name:"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,6,0" />
+                            <TextBox x:Name="SceneNameBox" />
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+
+                <GridSplitter Grid.Row="1"
+                              HorizontalAlignment="Stretch"
+                              ResizeDirection="Rows" />
+
+                <!-- Assets panel -->
+                <Border Grid.Row="2" Padding="6">
+                    <StackPanel>
+                        <TextBlock Text="ASSETS"
+                                   FontSize="10"
+                                   FontWeight="Bold" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Left vertical splitter -->
+            <GridSplitter Grid.Column="1"
+                          VerticalAlignment="Stretch"
+                          ResizeDirection="Columns" />
+
+            <!-- ── Viewport panel ── -->
+            <Border Grid.Column="2" Padding="6">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="VIEWPORT"
+                               FontSize="10"
+                               FontWeight="Bold"
+                               Margin="0,0,0,6" />
+                    <!-- placeholder gray rectangle -->
+                    <Border Background="#55555A" CornerRadius="2" />
+                </DockPanel>
+            </Border>
+
+            <!-- Right vertical splitter -->
+            <GridSplitter Grid.Column="3"
+                          VerticalAlignment="Stretch"
+                          ResizeDirection="Columns" />
+
+            <!-- ── Inspector panel ── -->
+            <Border Grid.Column="4" Padding="6">
+                <StackPanel>
+                    <TextBlock Text="INSPECTOR"
+                               FontSize="10"
+                               FontWeight="Bold" />
+                </StackPanel>
+            </Border>
+
+        </Grid>
+    </DockPanel>
+</Window>
