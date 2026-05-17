@@ -1,0 +1,33 @@
+# Build output
+bin/
+obj/
+publish/
+out/
+
+# IDE / editor
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.cache
+*.sln.docstates
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# MonoGame Content Pipeline
+Content/bin/
+Content/obj/
+
+# NuGet
+*.nupkg
+packages/
+.nuget/
+
+# Test output
+TestResults/
+coverage.*
+*.coverage
+*.coveragexml
