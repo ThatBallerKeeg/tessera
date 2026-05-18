@@ -52,8 +52,16 @@ public static class Autotile
 
     /// <summary>
     /// Resolves the autotile variant that should be displayed at
-    /// <paramref name="position"/> given its same-terrain neighbours.
+    /// <paramref name="position"/> given its neighbours.
     /// </summary>
+    /// <remarks>
+    /// <para><b>Multi-terrain priority rule:</b> a neighbour counts as "same terrain"
+    /// for the purpose of building the blob mask when it shares the same terrain tag
+    /// <em>or</em> has a strictly higher <see cref="TileMetadata.TerrainPriority"/>.
+    /// This lets higher-priority terrains dominate lower-priority ones at shared edges:
+    /// grass (priority 1) blobs over dirt (priority 0); water (priority 2) dominates both.
+    /// Terrains with the same priority but different tags never blob into each other.</para>
+    /// </remarks>
     /// <returns>
     /// The <see cref="TileId"/> of the matching blob variant in
     /// <paramref name="tileset"/>, or <see cref="TileId.Empty"/> if the
@@ -70,7 +78,8 @@ public static class Autotile
             return baseTile;
 
         string tag      = baseMeta.TerrainTag;
-        int    rawMask  = BuildNeighborMask(layer, position, tag, tileset);
+        int    priority = baseMeta.TerrainPriority;
+        int    rawMask  = BuildNeighborMask(layer, position, tag, priority, tileset);
         int    blobMask = ApplyCornerRule(rawMask);
         int    variant  = VariantTable[blobMask];
 
@@ -86,23 +95,25 @@ public static class Autotile
     // ── Internals ─────────────────────────────────────────────────────────────
 
     private static int BuildNeighborMask(
-        TilemapData layer, Vector2Int pos, string tag, TilesetData tileset)
+        TilemapData layer, Vector2Int pos, string tag, int priority, TilesetData tileset)
     {
         int mask = 0;
         for (int bit = 0; bit < 8; bit++)
         {
             var neighbor = pos + Offsets[bit];
-            if (IsSameTerrain(layer.GetTile(neighbor), tag, tileset))
+            if (IsSameTerrain(layer.GetTile(neighbor), tag, priority, tileset))
                 mask |= 1 << bit;
         }
         return mask;
     }
 
-    private static bool IsSameTerrain(TileId tile, string tag, TilesetData tileset)
+    // A neighbour counts as "same" when it shares the terrain tag OR has strictly
+    // higher priority (higher-priority terrain dominates the edge).
+    private static bool IsSameTerrain(TileId tile, string tag, int priority, TilesetData tileset)
     {
         if (tile == TileId.Empty) return false;
         var meta = FindMeta(tileset, tile);
-        return meta is not null && meta.TerrainTag == tag;
+        return meta is not null && (meta.TerrainTag == tag || meta.TerrainPriority > priority);
     }
 
     // Clears diagonal bits whose adjacent cardinal pair is incomplete.
