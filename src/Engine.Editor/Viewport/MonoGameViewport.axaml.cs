@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Engine.Core.Tiles;
 using Engine.Runtime.Viewport;
 
 namespace Engine.Editor.Viewport;
@@ -26,6 +27,20 @@ public partial class MonoGameViewport : UserControl
     private int              _bitmapW, _bitmapH;
     private DispatcherTimer? _pollTimer;
     private bool             _started;
+    private bool             _isPointerDown;
+
+    // ── Events fired by the viewport ──────────────────────────────────────────
+
+    /// <summary>Fired on left-button press. Point is in viewport pixel space (1:1 with world at v0.1).</summary>
+    public event Action<Point>? ViewportPointerPressed;
+
+    /// <summary>Fired on pointer move while left button is held.</summary>
+    public event Action<Point>? ViewportPointerDragged;
+
+    /// <summary>Fired on left-button release.</summary>
+    public event Action? ViewportPointerReleased;
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     public MonoGameViewport()
     {
@@ -40,15 +55,11 @@ public partial class MonoGameViewport : UserControl
         _started = true;
 
         _game = new ViewportGame();
-
-        // Initialize SDL + GraphicsDevice on the current (main) thread.
-        // Must NOT be called from a background thread on macOS.
         _game.StartManual();
 
         if (Bounds is { Width: > 1, Height: > 1 })
             _game.RequestResize((int)Bounds.Width, (int)Bounds.Height);
 
-        // Drive Update+Draw at ~60 fps on the main thread.
         _pollTimer = new DispatcherTimer(DispatcherPriority.Render)
         {
             Interval = TimeSpan.FromMilliseconds(16),
@@ -58,6 +69,8 @@ public partial class MonoGameViewport : UserControl
 
         SizeChanged                += OnSizeChanged;
         ViewportImage.PointerMoved += OnPointerMoved;
+        ViewportImage.PointerPressed  += OnPointerPressed;
+        ViewportImage.PointerReleased += OnPointerReleased;
     }
 
     private void OnUnloaded(object? sender, RoutedEventArgs e)
@@ -72,6 +85,19 @@ public partial class MonoGameViewport : UserControl
         int h = Math.Max(1, (int)e.NewSize.Height);
         _game?.RequestResize(w, h);
     }
+
+    // ── Tilemap support ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Queues a tilemap layer + tileset to be loaded on the next MonoGame tick.
+    /// The texture is loaded from <paramref name="imagePath"/> inside the MonoGame Update loop.
+    /// </summary>
+    public void LoadTilemapLayer(TilemapData layer, TilesetData tileset, string imagePath)
+    {
+        _game?.SetTilemapSetup(layer, tileset, imagePath);
+    }
+
+    // ── Frame loop ────────────────────────────────────────────────────────────
 
     private void OnTick(object? sender, EventArgs e)
     {
@@ -100,22 +126,45 @@ public partial class MonoGameViewport : UserControl
             ViewportImage.Source = _bitmap;
         }
 
-        using var fb = _bitmap.Lock();
-        int srcRow = w * 4;
-        if (fb.RowBytes == srcRow)
+        using (var fb = _bitmap.Lock())
         {
-            Marshal.Copy(_stagingBuffer, 0, fb.Address, w * h * 4);
+            int srcRow = w * 4;
+            if (fb.RowBytes == srcRow)
+            {
+                Marshal.Copy(_stagingBuffer, 0, fb.Address, w * h * 4);
+            }
+            else
+            {
+                for (int row = 0; row < h; row++)
+                    Marshal.Copy(_stagingBuffer, row * srcRow, fb.Address + row * fb.RowBytes, srcRow);
+            }
         }
-        else
-        {
-            for (int row = 0; row < h; row++)
-                Marshal.Copy(_stagingBuffer, row * srcRow, fb.Address + row * fb.RowBytes, srcRow);
-        }
+
+        // Notify Avalonia that the Image's pixel data changed so it repaints this tick.
+        ViewportImage.InvalidateVisual();
     }
+
+    // ── Pointer events ────────────────────────────────────────────────────────
 
     private void OnPointerMoved(object? sender, PointerEventArgs e)
     {
         var pos = e.GetPosition(ViewportImage);
         _game?.UpdateMousePosition((float)pos.X, (float)pos.Y);
+
+        if (_isPointerDown)
+            ViewportPointerDragged?.Invoke(pos);
+    }
+
+    private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(ViewportImage).Properties.IsLeftButtonPressed) return;
+        _isPointerDown = true;
+        ViewportPointerPressed?.Invoke(e.GetPosition(ViewportImage));
+    }
+
+    private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        _isPointerDown = false;
+        ViewportPointerReleased?.Invoke();
     }
 }

@@ -1,4 +1,6 @@
 using System.Reflection;
+using Engine.Core.Tiles;
+using Engine.Runtime.Tiles;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
@@ -36,6 +38,15 @@ public class ViewportGame : EngineGame
     private float _mouseY;
     private readonly object _mouseLock = new();
 
+    // ── Tilemap rendering ─────────────────────────────────────────────────────
+
+    private SpriteBatch?    _spriteBatch;
+    private TilemapRenderer? _tilemapRenderer;
+    private Texture2D?      _tilesetTexture;
+
+    // Queued setup applied on the next Update tick (must be on the MonoGame/main thread).
+    private (TilemapData Layer, TilesetData Tileset, string Path)? _pendingSetup;
+
     /// <summary>True once <see cref="StartManual"/> has completed successfully.</summary>
     public bool IsReady { get; private set; }
 
@@ -46,6 +57,20 @@ public class ViewportGame : EngineGame
         _graphics.PreferredBackBufferHeight = 1;
         IsMouseVisible = false;
     }
+
+    // ── Tilemap public API ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Queues a tilemap layer + tileset to load on the next tick.
+    /// The texture is created from <paramref name="imagePath"/> inside the Update loop
+    /// so it runs on the GraphicsDevice thread.
+    /// </summary>
+    public void SetTilemapSetup(TilemapData layer, TilesetData tileset, string imagePath)
+    {
+        _pendingSetup = (layer, tileset, imagePath);
+    }
+
+    // ── MonoGame overrides ────────────────────────────────────────────────────
 
     /// <summary>
     /// Initializes the MonoGame platform (SDL + GraphicsDevice) synchronously on the calling
@@ -65,14 +90,12 @@ public class ViewportGame : EngineGame
         if (IsReady) Tick(); // Game.Tick() is public in MonoGame 3.8
     }
 
-    // ── MonoGame overrides ────────────────────────────────────────────────────
-
     protected override void Initialize()
     {
         base.Initialize();
-        // Push the 1×1 helper window off-screen so it doesn't appear in the taskbar.
         Window.Position = new Point(-32000, -32000);
         CreateTarget(_requestedWidth, _requestedHeight);
+        _spriteBatch = new SpriteBatch(GraphicsDevice);
     }
 
     protected override void Update(GameTime gameTime)
@@ -80,6 +103,32 @@ public class ViewportGame : EngineGame
         int rw = _requestedWidth, rh = _requestedHeight;
         if (rw != _targetWidth || rh != _targetHeight)
             CreateTarget(rw, rh);
+
+        // Process any pending tilemap setup (texture load must be on the MonoGame thread).
+        if (_pendingSetup is { } setup)
+        {
+            _pendingSetup = null;
+            try
+            {
+                _tilesetTexture?.Dispose();
+                using var stream = File.OpenRead(setup.Path);
+                _tilesetTexture = Texture2D.FromStream(GraphicsDevice, stream);
+
+                _tilemapRenderer?.Dispose();
+                var ctx = new TilemapLayerContext
+                {
+                    Layer   = setup.Layer,
+                    Tileset = setup.Tileset,
+                    Texture = _tilesetTexture,
+                };
+                _tilemapRenderer = new TilemapRenderer([ctx]);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ViewportGame] Failed to load tileset texture: {ex.Message}");
+            }
+        }
+
         base.Update(gameTime);
     }
 
@@ -93,11 +142,7 @@ public class ViewportGame : EngineGame
 
         // Render scene content into the offscreen render target.
         GraphicsDevice.SetRenderTarget(_target);
-        float t = (float)gameTime.TotalGameTime.TotalSeconds;
-        GraphicsDevice.Clear(new Color(
-            (byte)(30 + 15 * MathF.Abs(MathF.Sin(t * 0.7f))),
-            (byte)30,
-            (byte)(46 + 20 * MathF.Abs(MathF.Sin(t * 0.5f)))));
+        GraphicsDevice.Clear(new Color(20, 20, 28));
         DrawViewportContent(gameTime);
 
         // Restore the 1×1 back-buffer, then GPU → CPU readback.
@@ -124,7 +169,17 @@ public class ViewportGame : EngineGame
     }
 
     /// <summary>Override to render scene content into the viewport render target.</summary>
-    protected virtual void DrawViewportContent(GameTime gameTime) { }
+    protected virtual void DrawViewportContent(GameTime gameTime)
+    {
+        if (_tilemapRenderer is null || _spriteBatch is null) return;
+
+        var camera = new Rectangle(0, 0, _targetWidth, _targetHeight);
+        var clock  = new TilemapClock((long)gameTime.TotalGameTime.TotalMilliseconds);
+
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
+        _tilemapRenderer.Render(camera, _spriteBatch, ctx => ctx.Texture, clock);
+        _spriteBatch.End();
+    }
 
     // ── Public thread-safe API ────────────────────────────────────────────────
 
@@ -186,7 +241,13 @@ public class ViewportGame : EngineGame
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) _target?.Dispose();
+        if (disposing)
+        {
+            _target?.Dispose();
+            _spriteBatch?.Dispose();
+            _tilemapRenderer?.Dispose();
+            _tilesetTexture?.Dispose();
+        }
         base.Dispose(disposing);
     }
 }

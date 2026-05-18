@@ -1,11 +1,12 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:viewport="clr-namespace:Engine.Editor.Viewport"
+        xmlns:tilemap="clr-namespace:Engine.Editor.Tilemap"
         x:Class="Engine.Editor.MainWindow"
         Title="Tessera Engine Editor"
         Width="1400"
         Height="900"
-        MinWidth="800"
+        MinWidth="900"
         MinHeight="600">
 
     <DockPanel>
@@ -21,14 +22,16 @@
             </MenuItem>
         </Menu>
 
-        <!-- Four-panel layout -->
+        <!-- Five-panel layout: Left | Viewport | Tilemap tools | Inspector -->
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="200" MinWidth="120" />
                 <ColumnDefinition Width="4" />
                 <ColumnDefinition Width="*"   MinWidth="200" />
                 <ColumnDefinition Width="4" />
-                <ColumnDefinition Width="220" MinWidth="120" />
+                <ColumnDefinition Width="240" MinWidth="160" />
+                <ColumnDefinition Width="4" />
+                <ColumnDefinition Width="180" MinWidth="120" />
             </Grid.ColumnDefinitions>
 
             <!-- ── Left column: Scene (top) + Assets (bottom) ── -->
@@ -76,15 +79,23 @@
                           ResizeDirection="Columns" />
 
             <!-- ── Viewport panel ── -->
-            <viewport:MonoGameViewport Grid.Column="2" />
+            <viewport:MonoGameViewport x:Name="MainViewport" Grid.Column="2" />
 
-            <!-- Right vertical splitter -->
+            <!-- Right vertical splitter (Viewport | Tilemap) -->
             <GridSplitter Grid.Column="3"
                           VerticalAlignment="Stretch"
                           ResizeDirection="Columns" />
 
+            <!-- ── Tilemap tools panel ── -->
+            <tilemap:TilemapToolPanel x:Name="TilemapPanel" Grid.Column="4" />
+
+            <!-- Right vertical splitter (Tilemap | Inspector) -->
+            <GridSplitter Grid.Column="5"
+                          VerticalAlignment="Stretch"
+                          ResizeDirection="Columns" />
+
             <!-- ── Inspector panel ── -->
-            <Border Grid.Column="4" Padding="6">
+            <Border Grid.Column="6" Padding="6">
                 <StackPanel>
                     <TextBlock Text="INSPECTOR"
                                FontSize="10"

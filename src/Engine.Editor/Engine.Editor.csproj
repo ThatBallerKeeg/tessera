@@ -23,6 +23,9 @@
     <Compile Update="Viewport\MonoGameViewport.axaml.cs">
       <DependentUpon>MonoGameViewport.axaml</DependentUpon>
     </Compile>
+    <Compile Update="Tilemap\TilemapToolPanel.axaml.cs">
+      <DependentUpon>TilemapToolPanel.axaml</DependentUpon>
+    </Compile>
   </ItemGroup>
 
 </Project>
