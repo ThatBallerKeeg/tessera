@@ -12,7 +12,14 @@ public static class SceneSerializer
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        Converters = { new Vector2JsonConverter(), new Vector2IntJsonConverter() },
+        Converters =
+        {
+            new Vector2JsonConverter(),
+            new Vector2IntJsonConverter(),
+            new TileIdJsonConverter(),
+            new ChunkCoordJsonConverter(),
+            new ChunkDataJsonConverter(),
+        },
     };
 
     /// <summary>Serializes <paramref name="scene"/> to <paramref name="stream"/> as indented camelCase JSON.</summary>

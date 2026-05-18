@@ -1,3 +1,5 @@
+using Engine.Core.Tiles;
+
 namespace Engine.Core.Scene;
 
 /// <summary>
@@ -15,4 +17,7 @@ public sealed class SceneData
 
     /// <summary>Root-level GameObjects in the scene.</summary>
     public List<GameObjectData> GameObjects { get; set; } = new();
+
+    /// <summary>Tilemap layers in the scene, ordered by <see cref="TilemapData.LayerIndex"/>.</summary>
+    public List<TilemapData> Tilemaps { get; set; } = new();
 }
