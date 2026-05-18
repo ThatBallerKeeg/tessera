@@ -2,7 +2,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Engine.Editor.Viewport.MonoGameViewport"
              Background="#1A1A28">
-    <Image x:Name="ViewportImage"
-           Stretch="Fill"
-           RenderOptions.BitmapInterpolationMode="None" />
+    <Grid>
+        <Image x:Name="ViewportImage"
+               Stretch="Fill"
+               RenderOptions.BitmapInterpolationMode="None" />
+        <Canvas x:Name="PreviewCanvas"
+                IsHitTestVisible="False" />
+    </Grid>
 </UserControl>

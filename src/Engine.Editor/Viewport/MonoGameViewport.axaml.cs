@@ -1,8 +1,10 @@
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
@@ -29,16 +31,19 @@ public partial class MonoGameViewport : UserControl
     private bool             _started;
     private bool             _isPointerDown;
 
+    private Rectangle? _rectPreview;
+    private Line?      _linePreview;
+
     // ── Events fired by the viewport ──────────────────────────────────────────
 
     /// <summary>Fired on left-button press. Point is in viewport pixel space (1:1 with world at v0.1).</summary>
-    public event Action<Point>? ViewportPointerPressed;
+    public event Action<Point, KeyModifiers>? ViewportPointerPressed;
 
     /// <summary>Fired on pointer move while left button is held.</summary>
     public event Action<Point>? ViewportPointerDragged;
 
-    /// <summary>Fired on left-button release.</summary>
-    public event Action? ViewportPointerReleased;
+    /// <summary>Fired on left-button release. Point is in viewport pixel space.</summary>
+    public event Action<Point>? ViewportPointerReleased;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -97,6 +102,59 @@ public partial class MonoGameViewport : UserControl
         _game?.SetTilemapSetup(layer, tileset, imagePath);
     }
 
+    // ── Preview canvas ────────────────────────────────────────────────────────
+
+    /// <summary>Shows a rectangle outline preview snapped to tile grid.</summary>
+    public void UpdateRectPreview(int tx1, int ty1, int tx2, int ty2, int tileW, int tileH)
+    {
+        int px = Math.Min(tx1, tx2) * tileW;
+        int py = Math.Min(ty1, ty2) * tileH;
+        int pw = (Math.Abs(tx1 - tx2) + 1) * tileW;
+        int ph = (Math.Abs(ty1 - ty2) + 1) * tileH;
+
+        if (_rectPreview is null)
+        {
+            _rectPreview = new Rectangle
+            {
+                Stroke          = Brushes.Yellow,
+                StrokeThickness = 1,
+                Fill            = Brushes.Transparent,
+            };
+            PreviewCanvas.Children.Add(_rectPreview);
+        }
+
+        Canvas.SetLeft(_rectPreview, px);
+        Canvas.SetTop(_rectPreview,  py);
+        _rectPreview.Width     = pw;
+        _rectPreview.Height    = ph;
+        _rectPreview.IsVisible = true;
+    }
+
+    /// <summary>Shows a straight line preview from <paramref name="start"/> to <paramref name="end"/>.</summary>
+    public void UpdateLinePreview(Point start, Point end)
+    {
+        if (_linePreview is null)
+        {
+            _linePreview = new Line
+            {
+                Stroke          = Brushes.Yellow,
+                StrokeThickness = 1,
+            };
+            PreviewCanvas.Children.Add(_linePreview);
+        }
+
+        _linePreview.StartPoint = start;
+        _linePreview.EndPoint   = end;
+        _linePreview.IsVisible  = true;
+    }
+
+    /// <summary>Hides all preview shapes.</summary>
+    public void ClearPreview()
+    {
+        if (_rectPreview is not null) _rectPreview.IsVisible = false;
+        if (_linePreview is not null) _linePreview.IsVisible = false;
+    }
+
     // ── Frame loop ────────────────────────────────────────────────────────────
 
     private void OnTick(object? sender, EventArgs e)
@@ -140,7 +198,6 @@ public partial class MonoGameViewport : UserControl
             }
         }
 
-        // Notify Avalonia that the Image's pixel data changed so it repaints this tick.
         ViewportImage.InvalidateVisual();
     }
 
@@ -159,12 +216,12 @@ public partial class MonoGameViewport : UserControl
     {
         if (!e.GetCurrentPoint(ViewportImage).Properties.IsLeftButtonPressed) return;
         _isPointerDown = true;
-        ViewportPointerPressed?.Invoke(e.GetPosition(ViewportImage));
+        ViewportPointerPressed?.Invoke(e.GetPosition(ViewportImage), e.KeyModifiers);
     }
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         _isPointerDown = false;
-        ViewportPointerReleased?.Invoke();
+        ViewportPointerReleased?.Invoke(e.GetPosition(ViewportImage));
     }
 }

@@ -47,18 +47,14 @@
         </DockPanel>
 
         <!-- Tool buttons (mutually exclusive) -->
-        <StackPanel DockPanel.Dock="Top"
-                    Orientation="Horizontal"
-                    Margin="6,6,6,2">
-            <ToggleButton x:Name="PaintToolButton"
-                          Content="Paint"
-                          IsChecked="True"
-                          Width="56"
-                          Margin="0,0,4,0" />
-            <ToggleButton x:Name="EraseToolButton"
-                          Content="Erase"
-                          Width="56" />
-        </StackPanel>
+        <WrapPanel DockPanel.Dock="Top" Margin="6,6,6,2">
+            <ToggleButton x:Name="PaintToolButton"  Content="Paint"  IsChecked="True" Width="56" Margin="0,0,4,4" />
+            <ToggleButton x:Name="EraseToolButton"  Content="Erase"  Width="56" Margin="0,0,4,4" />
+            <ToggleButton x:Name="FillToolButton"   Content="Fill"   Width="56" Margin="0,0,4,4" />
+            <ToggleButton x:Name="RectToolButton"   Content="Rect"   Width="56" Margin="0,0,4,4" />
+            <ToggleButton x:Name="LineToolButton"   Content="Line"   Width="56" Margin="0,0,4,4" />
+            <ToggleButton x:Name="PickerToolButton" Content="Picker" Width="56" Margin="0,0,4,4" />
+        </WrapPanel>
 
         <!-- Selected tile indicator -->
         <TextBlock DockPanel.Dock="Top"

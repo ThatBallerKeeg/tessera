@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Layout;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Engine.Core.Tiles;
@@ -49,30 +48,17 @@ public partial class TilemapToolPanel : UserControl
         TilesetSelector.ItemsSource = _tilesets;
         LayerSelector.ItemsSource   = _layers;
 
-        LoadTilesetButton.Click      += OnLoadTilesetClicked;
-        PaletteGrid.PointerPressed   += OnPalettePointerPressed;
-        TilesetSelector.SelectionChanged += OnTilesetSelectionChanged;
-        LayerSelector.SelectionChanged   += OnLayerSelectionChanged;
+        LoadTilesetButton.Click           += OnLoadTilesetClicked;
+        PaletteGrid.PointerPressed        += OnPalettePointerPressed;
+        TilesetSelector.SelectionChanged  += OnTilesetSelectionChanged;
+        LayerSelector.SelectionChanged    += OnLayerSelectionChanged;
 
-        PaintToolButton.IsCheckedChanged += (_, _) =>
-        {
-            if (PaintToolButton.IsChecked == true)
-            {
-                EraseToolButton.IsChecked = false;
-                ActiveTool = EditorTool.Paint;
-                ToolChanged?.Invoke(EditorTool.Paint);
-            }
-        };
-
-        EraseToolButton.IsCheckedChanged += (_, _) =>
-        {
-            if (EraseToolButton.IsChecked == true)
-            {
-                PaintToolButton.IsChecked = false;
-                ActiveTool = EditorTool.Erase;
-                ToolChanged?.Invoke(EditorTool.Erase);
-            }
-        };
+        PaintToolButton.IsCheckedChanged  += (_, _) => { if (PaintToolButton.IsChecked  == true) SetTool(EditorTool.Paint);  };
+        EraseToolButton.IsCheckedChanged  += (_, _) => { if (EraseToolButton.IsChecked  == true) SetTool(EditorTool.Erase);  };
+        FillToolButton.IsCheckedChanged   += (_, _) => { if (FillToolButton.IsChecked   == true) SetTool(EditorTool.Fill);   };
+        RectToolButton.IsCheckedChanged   += (_, _) => { if (RectToolButton.IsChecked   == true) SetTool(EditorTool.Rect);   };
+        LineToolButton.IsCheckedChanged   += (_, _) => { if (LineToolButton.IsChecked   == true) SetTool(EditorTool.Line);   };
+        PickerToolButton.IsCheckedChanged += (_, _) => { if (PickerToolButton.IsChecked == true) SetTool(EditorTool.Picker); };
     }
 
     // ── Public API called by MainWindow ───────────────────────────────────────
@@ -105,6 +91,49 @@ public partial class TilemapToolPanel : UserControl
         SelectionBorder.IsVisible = false;
         SelectedTileLabel.Text    = "Selected: —";
         SelectedTile = TileId.Empty;
+    }
+
+    /// <summary>Highlights the palette cell for <paramref name="id"/> and fires TileSelected.</summary>
+    public void SelectTileById(TileId id)
+    {
+        if (_activeTileset is null || _paletteBitmap is null) return;
+        int tileW = _activeTileset.TileSize.X;
+        int tileH = _activeTileset.TileSize.Y;
+        if (tileW <= 0 || tileH <= 0) return;
+
+        int idx = _activeTileset.Tiles.FindIndex(t => t.Id == id);
+        if (idx < 0) return;
+
+        int cols  = _paletteBitmap.PixelSize.Width / tileW;
+        int tileX = idx % cols;
+        int tileY = idx / cols;
+
+        SelectedTile = id;
+        SelectedTileLabel.Text = $"Selected: {id.Value}";
+        TileSelected?.Invoke(id);
+
+        Avalonia.Controls.Canvas.SetLeft(SelectionBorder, tileX * tileW);
+        Avalonia.Controls.Canvas.SetTop(SelectionBorder,  tileY * tileH);
+        SelectionBorder.Width     = tileW;
+        SelectionBorder.Height    = tileH;
+        SelectionBorder.IsVisible = true;
+    }
+
+    /// <summary>Programmatically activates <paramref name="tool"/>.</summary>
+    public void SetActiveTool(EditorTool tool) => SetTool(tool);
+
+    // ── Internal helpers ──────────────────────────────────────────────────────
+
+    private void SetTool(EditorTool tool)
+    {
+        ActiveTool = tool;
+        PaintToolButton.IsChecked  = tool == EditorTool.Paint;
+        EraseToolButton.IsChecked  = tool == EditorTool.Erase;
+        FillToolButton.IsChecked   = tool == EditorTool.Fill;
+        RectToolButton.IsChecked   = tool == EditorTool.Rect;
+        LineToolButton.IsChecked   = tool == EditorTool.Line;
+        PickerToolButton.IsChecked = tool == EditorTool.Picker;
+        ToolChanged?.Invoke(tool);
     }
 
     // ── Internal handlers ─────────────────────────────────────────────────────
@@ -148,7 +177,6 @@ public partial class TilemapToolPanel : UserControl
         SelectedTileLabel.Text = $"Selected: {id}";
         TileSelected?.Invoke(SelectedTile);
 
-        // Move selection highlight.
         Avalonia.Controls.Canvas.SetLeft(SelectionBorder, tileX * tileW);
         Avalonia.Controls.Canvas.SetTop(SelectionBorder,  tileY * tileH);
         SelectionBorder.Width     = tileW;

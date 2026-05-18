@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
@@ -22,6 +23,10 @@ public partial class MainWindow : Window
     private TileId _selectedTile = TileId.Empty;
     private bool _isPainting;
 
+    // Drag tracking for Rect and Line tools.
+    private Vector2Int  _dragStartTile;
+    private KeyModifiers _pressModifiers;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -43,13 +48,13 @@ public partial class MainWindow : Window
         TilemapPanel.SetLayers([_activeLayer]);
         TilemapPanel.TilesetLoadRequested += OnTilesetLoadRequested;
         TilemapPanel.TileSelected += tile => _selectedTile = tile;
-        TilemapPanel.ToolChanged  += _ => { };  // ActiveTool read on demand
+        TilemapPanel.ToolChanged  += _ => { };
         TilemapPanel.LayerChanged += layer => _activeLayer = layer ?? _activeLayer;
 
         // Viewport painting events.
         MainViewport.ViewportPointerPressed  += OnViewportPointerPressed;
         MainViewport.ViewportPointerDragged  += OnViewportPointerDragged;
-        MainViewport.ViewportPointerReleased += () => _isPainting = false;
+        MainViewport.ViewportPointerReleased += OnViewportPointerReleased;
     }
 
     // ── Tileset loading ───────────────────────────────────────────────────────
@@ -98,33 +103,201 @@ public partial class MainWindow : Window
 
     // ── Viewport painting ─────────────────────────────────────────────────────
 
-    private void OnViewportPointerPressed(Avalonia.Point pt)
+    private void OnViewportPointerPressed(Avalonia.Point pt, KeyModifiers modifiers)
     {
-        _isPainting = true;
-        ApplyTool(pt);
+        _pressModifiers = modifiers;
+        _dragStartTile  = PixelToTile(pt);
+        _isPainting     = true;
+
+        switch (TilemapPanel.ActiveTool)
+        {
+            case EditorTool.Paint:
+                ApplyPaint(_dragStartTile);
+                break;
+            case EditorTool.Erase:
+                ApplyErase(_dragStartTile);
+                break;
+            case EditorTool.Fill:
+                FloodFill(_dragStartTile, _selectedTile, (_pressModifiers & KeyModifiers.Shift) != 0);
+                _isPainting = false;
+                break;
+            case EditorTool.Picker:
+                ApplyPicker(_dragStartTile);
+                _isPainting = false;
+                break;
+            // Rect and Line: preview during drag, apply on release.
+        }
     }
 
     private void OnViewportPointerDragged(Avalonia.Point pt)
     {
-        if (_isPainting) ApplyTool(pt);
+        if (!_isPainting) return;
+        var tile = PixelToTile(pt);
+
+        switch (TilemapPanel.ActiveTool)
+        {
+            case EditorTool.Paint:
+                ApplyPaint(tile);
+                break;
+            case EditorTool.Erase:
+                ApplyErase(tile);
+                break;
+            case EditorTool.Rect:
+                if (_activeTileset is not null)
+                    MainViewport.UpdateRectPreview(
+                        _dragStartTile.X, _dragStartTile.Y,
+                        tile.X, tile.Y,
+                        _activeTileset.TileSize.X, _activeTileset.TileSize.Y);
+                break;
+            case EditorTool.Line:
+                if (_activeTileset is not null)
+                    MainViewport.UpdateLinePreview(TileCenter(_dragStartTile), TileCenter(tile));
+                break;
+        }
     }
 
-    private void ApplyTool(Avalonia.Point pt)
+    private void OnViewportPointerReleased(Avalonia.Point pt)
     {
-        if (_activeTileset is null) return;
+        if (!_isPainting) { _isPainting = false; return; }
+        _isPainting = false;
 
+        var tile = PixelToTile(pt);
+        switch (TilemapPanel.ActiveTool)
+        {
+            case EditorTool.Rect:
+                ApplyRect(_dragStartTile, tile);
+                MainViewport.ClearPreview();
+                break;
+            case EditorTool.Line:
+                ApplyLine(_dragStartTile, tile);
+                MainViewport.ClearPreview();
+                break;
+        }
+    }
+
+    // ── Tool implementations ──────────────────────────────────────────────────
+
+    private void ApplyPaint(Vector2Int tile)
+    {
+        if (_selectedTile != TileId.Empty)
+            _activeLayer.SetTile(tile, _selectedTile);
+    }
+
+    private void ApplyErase(Vector2Int tile)
+    {
+        _activeLayer.SetTile(tile, TileId.Empty);
+    }
+
+    private void ApplyPicker(Vector2Int tile)
+    {
+        var id = _activeLayer.GetTile(tile);
+        if (id == TileId.Empty) return;
+        TilemapPanel.SelectTileById(id);   // fires TileSelected → _selectedTile updated
+        TilemapPanel.SetActiveTool(EditorTool.Paint);
+    }
+
+    private void ApplyRect(Vector2Int a, Vector2Int b)
+    {
+        if (_selectedTile == TileId.Empty) return;
+        int x1 = System.Math.Min(a.X, b.X), x2 = System.Math.Max(a.X, b.X);
+        int y1 = System.Math.Min(a.Y, b.Y), y2 = System.Math.Max(a.Y, b.Y);
+
+        using var bulk = _activeLayer.BeginBulkEdit();
+        for (int y = y1; y <= y2; y++)
+        for (int x = x1; x <= x2; x++)
+            _activeLayer.SetTile(new Vector2Int(x, y), _selectedTile);
+    }
+
+    private void ApplyLine(Vector2Int a, Vector2Int b)
+    {
+        if (_selectedTile == TileId.Empty) return;
+
+        using var bulk = _activeLayer.BeginBulkEdit();
+        foreach (var pos in BresenhamLine(a.X, a.Y, b.X, b.Y))
+            _activeLayer.SetTile(pos, _selectedTile);
+    }
+
+    private void FloodFill(Vector2Int start, TileId paint, bool exactMatch)
+    {
+        if (_activeTileset is null || paint == TileId.Empty) return;
+
+        var targetId = _activeLayer.GetTile(start);
+        if (targetId == paint) return;
+
+        string targetTag = (!exactMatch && targetId != TileId.Empty)
+            ? GetTerrainTag(targetId) : "";
+
+        bool Matches(TileId t) => exactMatch
+            ? t == targetId
+            : targetId == TileId.Empty ? t == TileId.Empty : GetTerrainTag(t) == targetTag;
+
+        var queue   = new Queue<Vector2Int>();
+        var visited = new HashSet<Vector2Int>();
+        queue.Enqueue(start);
+        visited.Add(start);
+
+        const int MaxTiles = 250_000;
+        using var bulk = _activeLayer.BeginBulkEdit();
+
+        while (queue.Count > 0 && visited.Count < MaxTiles)
+        {
+            var pos = queue.Dequeue();
+            _activeLayer.SetTile(pos, paint);
+
+            var up    = new Vector2Int(pos.X,     pos.Y - 1);
+            var down  = new Vector2Int(pos.X,     pos.Y + 1);
+            var left  = new Vector2Int(pos.X - 1, pos.Y);
+            var right = new Vector2Int(pos.X + 1, pos.Y);
+
+            foreach (var n in new[] { up, down, left, right })
+            {
+                if (visited.Add(n) && Matches(_activeLayer.GetTile(n)))
+                    queue.Enqueue(n);
+            }
+        }
+    }
+
+    // ── Coordinate helpers ────────────────────────────────────────────────────
+
+    private Vector2Int PixelToTile(Avalonia.Point pt)
+    {
+        if (_activeTileset is null) return default;
         int tileW = _activeTileset.TileSize.X;
         int tileH = _activeTileset.TileSize.Y;
-        if (tileW <= 0 || tileH <= 0) return;
+        if (tileW <= 0 || tileH <= 0) return default;
+        return new Vector2Int((int)(pt.X / tileW), (int)(pt.Y / tileH));
+    }
 
-        int worldTileX = (int)(pt.X / tileW);
-        int worldTileY = (int)(pt.Y / tileH);
-        var worldPos = new Vector2Int(worldTileX, worldTileY);
+    private Avalonia.Point TileCenter(Vector2Int tile)
+    {
+        if (_activeTileset is null) return new(tile.X, tile.Y);
+        return new(
+            tile.X * _activeTileset.TileSize.X + _activeTileset.TileSize.X * 0.5,
+            tile.Y * _activeTileset.TileSize.Y + _activeTileset.TileSize.Y * 0.5);
+    }
 
-        if (TilemapPanel.ActiveTool == EditorTool.Paint && _selectedTile != TileId.Empty)
-            _activeLayer.SetTile(worldPos, _selectedTile);
-        else if (TilemapPanel.ActiveTool == EditorTool.Erase)
-            _activeLayer.SetTile(worldPos, TileId.Empty);
+    private string GetTerrainTag(TileId id)
+    {
+        if (id == TileId.Empty || _activeTileset is null) return "";
+        foreach (var t in _activeTileset.Tiles)
+            if (t.Id == id) return t.TerrainTag;
+        return "";
+    }
+
+    private static IEnumerable<Vector2Int> BresenhamLine(int x0, int y0, int x1, int y1)
+    {
+        int dx = System.Math.Abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+        int dy = System.Math.Abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+        int err = (dx > dy ? dx : -dy) / 2;
+
+        while (true)
+        {
+            yield return new Vector2Int(x0, y0);
+            if (x0 == x1 && y0 == y1) break;
+            int e2 = err;
+            if (e2 > -dx) { err -= dy; x0 += sx; }
+            if (e2 <  dy) { err += dx; y0 += sy; }
+        }
     }
 
     // ── Scene name ────────────────────────────────────────────────────────────
@@ -171,7 +344,6 @@ public partial class MainWindow : Window
             _currentPath = file.Path.LocalPath;
             SceneNameBox.Text = _scene.Name;
 
-            // Re-populate layer list from loaded scene.
             if (_scene.Tilemaps.Count == 0)
                 _scene.Tilemaps.Add(new TilemapData { LayerName = "floor", LayerIndex = 0 });
             _activeLayer = _scene.Tilemaps[0];
