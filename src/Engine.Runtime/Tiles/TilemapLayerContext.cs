@@ -16,7 +16,14 @@ public sealed class TilemapLayerContext
 
     /// <summary>
     /// Loaded spritesheet texture. May be <see langword="null"/> in test scenarios;
-    /// when null, source rectangles are not computed and no pixels are sent to the GPU.
+    /// when null, <see cref="SpritesheetWidth"/> governs source-rect computation instead.
     /// </summary>
     public Texture2D? Texture { get; init; }
+
+    /// <summary>
+    /// Explicit spritesheet pixel width used when <see cref="Texture"/> is null.
+    /// Set in tests to verify source rectangles without a real GPU texture.
+    /// When both are null/zero, source rectangles are <see cref="Microsoft.Xna.Framework.Rectangle.Empty"/>.
+    /// </summary>
+    public int? SpritesheetWidth { get; init; }
 }

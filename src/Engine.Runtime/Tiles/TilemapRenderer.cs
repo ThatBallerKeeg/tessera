@@ -7,16 +7,15 @@ using Rectangle = Microsoft.Xna.Framework.Rectangle;
 namespace Engine.Runtime.Tiles;
 
 /// <summary>
-/// Chunked, frustum-culled tilemap renderer.
+/// Chunked, frustum-culled tilemap renderer with animated-tile support.
 /// <para>
-/// Each chunk maintains a render cache (precomputed list of destination/source rect pairs).
-/// The cache is built lazily on first render and invalidated whenever <see cref="TilemapData.ChunkDirty"/>
-/// fires. <see cref="Engine.Core.Tiles.Autotile.Resolve"/> is called per tile during cache builds.
+/// Each chunk maintains a render cache of <c>(destRect, resolvedTileId)</c> pairs, built lazily
+/// and invalidated via <see cref="TilemapData.ChunkDirty"/>. The resolved TileId stored in the
+/// cache is the autotile variant — it never changes between frames. Animation is applied at
+/// draw time from the <see cref="TilemapClock"/>, so the cache does not need to be rebuilt on
+/// every tick.
 /// </para>
-/// <para>
-/// Layers are drawn in ascending <see cref="TilemapData.LayerIndex"/> order.
-/// Chunks whose pixel extents do not intersect the camera rectangle are skipped entirely.
-/// </para>
+/// <para>Layers are drawn in ascending <see cref="TilemapData.LayerIndex"/> order.</para>
 /// </summary>
 public sealed class TilemapRenderer : IDisposable
 {
@@ -53,26 +52,29 @@ public sealed class TilemapRenderer : IDisposable
     // ── Render overloads ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// Renders all layers to <paramref name="drawer"/>, culling chunks outside
-    /// <paramref name="cameraWorldPixels"/>.
+    /// Renders all visible layers to <paramref name="drawer"/>.
+    /// <paramref name="clock"/> drives animated-tile frame selection; pass <c>default</c>
+    /// (ElapsedMs = 0) for static-only scenes or tests that don't need animation.
     /// </summary>
-    public void Render(Rectangle cameraWorldPixels, ITileDrawer drawer)
+    public void Render(Rectangle cameraWorldPixels, ITileDrawer drawer,
+                       TilemapClock clock = default)
     {
         foreach (var ls in _layers)
-            RenderLayer(ls, cameraWorldPixels, drawer);
+            RenderLayer(ls, cameraWorldPixels, drawer, clock);
     }
 
     /// <summary>
-    /// Renders all layers to <paramref name="spriteBatch"/>.
+    /// Renders all visible layers to <paramref name="spriteBatch"/>.
     /// <paramref name="textureFor"/> is called once per layer to resolve its spritesheet texture.
     /// </summary>
     public void Render(Rectangle cameraWorldPixels, SpriteBatch spriteBatch,
-                       Func<TilemapLayerContext, Texture2D?> textureFor)
+                       Func<TilemapLayerContext, Texture2D?> textureFor,
+                       TilemapClock clock = default)
     {
         foreach (var ls in _layers)
         {
             var drawer = new SpriteBatchTileDrawer(spriteBatch, textureFor(ls.Context));
-            RenderLayer(ls, cameraWorldPixels, drawer);
+            RenderLayer(ls, cameraWorldPixels, drawer, clock);
         }
     }
 
@@ -89,10 +91,18 @@ public sealed class TilemapRenderer : IDisposable
 
     // ── Internals ─────────────────────────────────────────────────────────────
 
-    private void RenderLayer(LayerState ls, Rectangle camera, ITileDrawer drawer)
+    private void RenderLayer(LayerState ls, Rectangle camera, ITileDrawer drawer, TilemapClock clock)
     {
         var layer   = ls.Context.Layer;
         var tileset = ls.Context.Tileset;
+        int tileW   = tileset.TileSize.X;
+        int tileH   = tileset.TileSize.Y;
+
+        // Sheet width: prefer explicit override (test scenarios) over real texture.
+        int sheetWidth  = ls.Context.SpritesheetWidth ?? ls.Context.Texture?.Width ?? 0;
+        int tilesPerRow = (sheetWidth > 0 && tileW > 0)
+                        ? System.Math.Max(1, sheetWidth / tileW)
+                        : 1;
 
         foreach (var coord in layer.OccupiedChunks)
         {
@@ -106,10 +116,42 @@ public sealed class TilemapRenderer : IDisposable
             }
 
             if (cache.IsDirty)
-                RebuildCache(coord, layer, tileset, ls.Context.Texture, cache);
+                RebuildCache(coord, layer, tileset, cache);
 
-            foreach (var (dest, src) in cache.Quads)
+            foreach (var (dest, resolvedId) in cache.Quads)
+            {
+                // Animation: if the base tile has frames, substitute the current frame's TileId.
+                var meta   = FindMeta(tileset, resolvedId);
+                TileId drawId;
+                if (meta is not null && meta.Frames.Count > 0)
+                {
+                    int period   = meta.Frames[0].DurationMs;
+                    int frameIdx = (period > 0)
+                                 ? (int)(clock.ElapsedMs / period % meta.Frames.Count)
+                                 : 0;
+                    drawId = meta.Frames[frameIdx].TileId;
+                }
+                else
+                {
+                    drawId = resolvedId;
+                }
+
+                Rectangle src;
+                if (sheetWidth > 0 && tileW > 0)
+                {
+                    int idx = System.Math.Max(0, drawId.Value - 1);
+                    src = new Rectangle(
+                        (idx % tilesPerRow) * tileW,
+                        (idx / tilesPerRow) * tileH,
+                        tileW, tileH);
+                }
+                else
+                {
+                    src = Rectangle.Empty;
+                }
+
                 drawer.Draw(dest, src);
+            }
         }
     }
 
@@ -120,17 +162,15 @@ public sealed class TilemapRenderer : IDisposable
         // Chunks not yet cached are dirty by default; nothing extra to do.
     }
 
-    private void RebuildCache(ChunkCoord coord, TilemapData layer, TilesetData tileset,
-                               Texture2D? texture, ChunkCache cache)
+    // Rebuilds the cache for one chunk. Stores (destRect, resolvedTileId) only —
+    // source rect computation and animation substitution happen at draw time.
+    private void RebuildCache(ChunkCoord coord, TilemapData layer, TilesetData tileset, ChunkCache cache)
     {
         cache.Quads.Clear();
         cache.IsDirty = false;
 
-        int tileW       = tileset.TileSize.X;
-        int tileH       = tileset.TileSize.Y;
-        int tilesPerRow = (texture is null || tileW == 0)
-                        ? 1
-                        : System.Math.Max(1, texture.Width / tileW);
+        int tileW = tileset.TileSize.X;
+        int tileH = tileset.TileSize.Y;
 
         for (int ly = 0; ly < ChunkCoord.ChunkSize; ly++)
         for (int lx = 0; lx < ChunkCoord.ChunkSize; lx++)
@@ -142,23 +182,7 @@ public sealed class TilemapRenderer : IDisposable
             var resolved = Autotile.Resolve(layer, worldPos, tileset);
             if (resolved == TileId.Empty) continue;
 
-            var dest = new Rectangle(wx * tileW, wy * tileH, tileW, tileH);
-
-            Rectangle src;
-            if (texture is null)
-            {
-                src = Rectangle.Empty;
-            }
-            else
-            {
-                int idx = System.Math.Max(0, resolved.Value - 1);
-                src = new Rectangle(
-                    (idx % tilesPerRow) * tileW,
-                    (idx / tilesPerRow) * tileH,
-                    tileW, tileH);
-            }
-
-            cache.Quads.Add((dest, src));
+            cache.Quads.Add((new Rectangle(wx * tileW, wy * tileH, tileW, tileH), resolved));
         }
 
         ChunkCacheRebuilt?.Invoke(coord);
@@ -174,6 +198,13 @@ public sealed class TilemapRenderer : IDisposable
         return camera.Intersects(chunkRect);
     }
 
+    private static TileMetadata? FindMeta(TilesetData tileset, TileId id)
+    {
+        foreach (var m in tileset.Tiles)
+            if (m.Id == id) return m;
+        return null;
+    }
+
     // ── Private types ─────────────────────────────────────────────────────────
 
     private sealed class LayerState
@@ -186,6 +217,6 @@ public sealed class TilemapRenderer : IDisposable
     private sealed class ChunkCache
     {
         public bool IsDirty = true;
-        public List<(Rectangle Dest, Rectangle Src)> Quads = new();
+        public List<(Rectangle Dest, TileId ResolvedId)> Quads = new();
     }
 }
