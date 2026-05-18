@@ -46,6 +46,31 @@
             </ComboBox>
         </DockPanel>
 
+        <!-- Layer management buttons -->
+        <StackPanel DockPanel.Dock="Top"
+                    Orientation="Horizontal"
+                    Margin="6,2,6,6">
+            <Button x:Name="NewLayerButton"
+                    Content="+"
+                    Width="30"
+                    Margin="0,0,2,0"
+                    ToolTip.Tip="New layer" />
+            <Button x:Name="DeleteLayerButton"
+                    Content="Del"
+                    Width="36"
+                    Margin="0,0,2,0"
+                    ToolTip.Tip="Delete active layer" />
+            <Button x:Name="MoveUpButton"
+                    Content="↑"
+                    Width="30"
+                    Margin="0,0,2,0"
+                    ToolTip.Tip="Move layer up" />
+            <Button x:Name="MoveDownButton"
+                    Content="↓"
+                    Width="30"
+                    ToolTip.Tip="Move layer down" />
+        </StackPanel>
+
         <!-- Tool buttons (mutually exclusive) -->
         <WrapPanel DockPanel.Dock="Top" Margin="6,6,6,2">
             <ToggleButton x:Name="PaintToolButton"  Content="Paint"  IsChecked="True" Width="56" Margin="0,0,4,4" />

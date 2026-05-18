@@ -50,6 +50,8 @@ public partial class MainWindow : Window
         TilemapPanel.TileSelected += tile => _selectedTile = tile;
         TilemapPanel.ToolChanged  += _ => { };
         TilemapPanel.LayerChanged += layer => _activeLayer = layer ?? _activeLayer;
+        TilemapPanel.LayerAdded   += OnLayerAdded;
+        TilemapPanel.LayerRemoved += OnLayerRemoved;
 
         // Viewport painting events.
         MainViewport.ViewportPointerPressed  += OnViewportPointerPressed;
@@ -99,6 +101,20 @@ public partial class MainWindow : Window
 
         // Queue texture load + renderer setup inside the MonoGame tick loop.
         MainViewport.LoadTilemapLayer(_activeLayer, tileset, path);
+    }
+
+    // ── Layer management ──────────────────────────────────────────────────────
+
+    private void OnLayerAdded(TilemapData layer)
+    {
+        _scene.Tilemaps.Add(layer);
+        _activeLayer = layer;
+    }
+
+    private void OnLayerRemoved(TilemapData layer)
+    {
+        _scene.Tilemaps.Remove(layer);
+        _activeLayer = TilemapPanel.ActiveLayer ?? _activeLayer;
     }
 
     // ── Viewport painting ─────────────────────────────────────────────────────

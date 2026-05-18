@@ -5,6 +5,7 @@ using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Engine.Core.Tiles;
+using Engine.Editor;
 
 namespace Engine.Editor.Tilemap;
 
@@ -27,10 +28,16 @@ public partial class TilemapToolPanel : UserControl
     /// <summary>Fired when the layer dropdown selection changes.</summary>
     public event Action<TilemapData?>? LayerChanged;
 
+    /// <summary>Fired after a new layer is created and added to the panel's list.</summary>
+    public event Action<TilemapData>?  LayerAdded;
+
+    /// <summary>Fired after a layer is removed from the panel's list.</summary>
+    public event Action<TilemapData>?  LayerRemoved;
+
     // ── State ─────────────────────────────────────────────────────────────────
 
-    public TileId      SelectedTile { get; private set; } = TileId.Empty;
-    public EditorTool  ActiveTool   { get; private set; } = EditorTool.Paint;
+    public TileId       SelectedTile { get; private set; } = TileId.Empty;
+    public EditorTool   ActiveTool   { get; private set; } = EditorTool.Paint;
     public TilemapData? ActiveLayer  { get; private set; }
 
     private readonly ObservableCollection<TilesetData> _tilesets = new();
@@ -48,10 +55,15 @@ public partial class TilemapToolPanel : UserControl
         TilesetSelector.ItemsSource = _tilesets;
         LayerSelector.ItemsSource   = _layers;
 
-        LoadTilesetButton.Click           += OnLoadTilesetClicked;
-        PaletteGrid.PointerPressed        += OnPalettePointerPressed;
-        TilesetSelector.SelectionChanged  += OnTilesetSelectionChanged;
-        LayerSelector.SelectionChanged    += OnLayerSelectionChanged;
+        LoadTilesetButton.Click          += OnLoadTilesetClicked;
+        PaletteGrid.PointerPressed       += OnPalettePointerPressed;
+        TilesetSelector.SelectionChanged += OnTilesetSelectionChanged;
+        LayerSelector.SelectionChanged   += OnLayerSelectionChanged;
+
+        NewLayerButton.Click    += OnNewLayerClicked;
+        DeleteLayerButton.Click += OnDeleteLayerClicked;
+        MoveUpButton.Click      += OnMoveUpClicked;
+        MoveDownButton.Click    += OnMoveDownClicked;
 
         PaintToolButton.IsCheckedChanged  += (_, _) => { if (PaintToolButton.IsChecked  == true) SetTool(EditorTool.Paint);  };
         EraseToolButton.IsCheckedChanged  += (_, _) => { if (EraseToolButton.IsChecked  == true) SetTool(EditorTool.Erase);  };
@@ -73,6 +85,7 @@ public partial class TilemapToolPanel : UserControl
             LayerSelector.SelectedIndex = 0;
             ActiveLayer = _layers[0];
         }
+        UpdateLayerButtons();
     }
 
     /// <summary>
@@ -84,8 +97,8 @@ public partial class TilemapToolPanel : UserControl
             _tilesets.Add(tileset);
         TilesetSelector.SelectedItem = tileset;
 
-        _paletteBitmap  = bitmap;
-        _activeTileset  = tileset;
+        _paletteBitmap     = bitmap;
+        _activeTileset     = tileset;
         PaletteImage.Source = bitmap;
 
         SelectionBorder.IsVisible = false;
@@ -122,6 +135,84 @@ public partial class TilemapToolPanel : UserControl
     /// <summary>Programmatically activates <paramref name="tool"/>.</summary>
     public void SetActiveTool(EditorTool tool) => SetTool(tool);
 
+    // ── Layer management handlers ─────────────────────────────────────────────
+
+    private async void OnNewLayerClicked(object? sender, RoutedEventArgs e)
+    {
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return;
+
+        string defaultName = $"Layer {_layers.Count + 1}";
+        string? name = await Dialogs.ShowNameInputAsync(owner, "New Layer", defaultName);
+        if (name is null) return;
+
+        int maxIndex = _layers.Count > 0 ? _layers.Max(l => l.LayerIndex) : -1;
+        var layer    = new TilemapData { LayerName = name, LayerIndex = maxIndex + 1 };
+
+        _layers.Add(layer);
+        LayerSelector.SelectedItem = layer;
+        UpdateLayerButtons();
+
+        LayerAdded?.Invoke(layer);
+    }
+
+    private async void OnDeleteLayerClicked(object? sender, RoutedEventArgs e)
+    {
+        if (ActiveLayer is null || _layers.Count <= 1) return;
+
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return;
+
+        bool confirmed = await Dialogs.ShowConfirmAsync(
+            owner,
+            $"Delete layer '{ActiveLayer.LayerName}'? This cannot be undone.",
+            "Delete Layer");
+
+        if (!confirmed) return;
+
+        var removed = ActiveLayer;
+        int idx     = _layers.IndexOf(removed);
+        _layers.Remove(removed);
+
+        // Select the adjacent layer that's still present.
+        LayerSelector.SelectedIndex = Math.Min(idx, _layers.Count - 1);
+        UpdateLayerButtons();
+
+        LayerRemoved?.Invoke(removed);
+    }
+
+    private void OnMoveUpClicked(object? sender, RoutedEventArgs e)
+    {
+        if (ActiveLayer is null) return;
+        int idx = _layers.IndexOf(ActiveLayer);
+        if (idx <= 0) return;
+
+        // Swap LayerIndex values between active and the one above it.
+        int tmp = _layers[idx].LayerIndex;
+        _layers[idx].LayerIndex     = _layers[idx - 1].LayerIndex;
+        _layers[idx - 1].LayerIndex = tmp;
+
+        _layers.Move(idx, idx - 1);
+        LayerSelector.SelectedItem = ActiveLayer;
+        UpdateLayerButtons();
+    }
+
+    private void OnMoveDownClicked(object? sender, RoutedEventArgs e)
+    {
+        if (ActiveLayer is null) return;
+        int idx = _layers.IndexOf(ActiveLayer);
+        if (idx < 0 || idx >= _layers.Count - 1) return;
+
+        // Swap LayerIndex values between active and the one below it.
+        int tmp = _layers[idx].LayerIndex;
+        _layers[idx].LayerIndex     = _layers[idx + 1].LayerIndex;
+        _layers[idx + 1].LayerIndex = tmp;
+
+        _layers.Move(idx, idx + 1);
+        LayerSelector.SelectedItem = ActiveLayer;
+        UpdateLayerButtons();
+    }
+
     // ── Internal helpers ──────────────────────────────────────────────────────
 
     private void SetTool(EditorTool tool)
@@ -134,6 +225,14 @@ public partial class TilemapToolPanel : UserControl
         LineToolButton.IsChecked   = tool == EditorTool.Line;
         PickerToolButton.IsChecked = tool == EditorTool.Picker;
         ToolChanged?.Invoke(tool);
+    }
+
+    private void UpdateLayerButtons()
+    {
+        int idx = ActiveLayer is null ? -1 : _layers.IndexOf(ActiveLayer);
+        DeleteLayerButton.IsEnabled = _layers.Count > 1;
+        MoveUpButton.IsEnabled      = idx > 0;
+        MoveDownButton.IsEnabled    = idx >= 0 && idx < _layers.Count - 1;
     }
 
     // ── Internal handlers ─────────────────────────────────────────────────────
@@ -163,7 +262,7 @@ public partial class TilemapToolPanel : UserControl
         if (_activeTileset is null || _paletteBitmap is null) return;
         if (!e.GetCurrentPoint(PaletteGrid).Properties.IsLeftButtonPressed) return;
 
-        var pos  = e.GetPosition(PaletteImage);
+        var pos   = e.GetPosition(PaletteImage);
         int tileW = _activeTileset.TileSize.X;
         int tileH = _activeTileset.TileSize.Y;
         if (tileW <= 0 || tileH <= 0) return;
@@ -196,6 +295,7 @@ public partial class TilemapToolPanel : UserControl
         {
             ActiveLayer = layer;
             LayerChanged?.Invoke(layer);
+            UpdateLayerButtons();
         }
     }
 }
