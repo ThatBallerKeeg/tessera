@@ -10,7 +10,7 @@ namespace Engine.Runtime;
 /// </summary>
 public class EngineGame : Game
 {
-    private readonly GraphicsDeviceManager _graphics;
+    protected readonly GraphicsDeviceManager _graphics;
     private SceneData? _currentScene;
 
     public EngineGame()

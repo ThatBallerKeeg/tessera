@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:viewport="clr-namespace:Engine.Editor.Viewport"
         x:Class="Engine.Editor.MainWindow"
         Title="Tessera Engine Editor"
         Width="1400"
@@ -75,17 +76,7 @@
                           ResizeDirection="Columns" />
 
             <!-- ── Viewport panel ── -->
-            <Border Grid.Column="2" Padding="6">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top"
-                               Text="VIEWPORT"
-                               FontSize="10"
-                               FontWeight="Bold"
-                               Margin="0,0,0,6" />
-                    <!-- placeholder gray rectangle -->
-                    <Border Background="#55555A" CornerRadius="2" />
-                </DockPanel>
-            </Border>
+            <viewport:MonoGameViewport Grid.Column="2" />
 
             <!-- Right vertical splitter -->
             <GridSplitter Grid.Column="3"

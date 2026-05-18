@@ -1,0 +1,8 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Engine.Editor.Viewport.MonoGameViewport"
+             Background="#1A1A28">
+    <Image x:Name="ViewportImage"
+           Stretch="Fill"
+           RenderOptions.BitmapInterpolationMode="None" />
+</UserControl>

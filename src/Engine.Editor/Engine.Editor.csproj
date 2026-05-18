@@ -20,6 +20,9 @@
     <Compile Update="MainWindow.axaml.cs">
       <DependentUpon>MainWindow.axaml</DependentUpon>
     </Compile>
+    <Compile Update="Viewport\MonoGameViewport.axaml.cs">
+      <DependentUpon>MonoGameViewport.axaml</DependentUpon>
+    </Compile>
   </ItemGroup>
 
 </Project>
