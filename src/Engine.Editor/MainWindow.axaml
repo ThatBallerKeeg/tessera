@@ -14,11 +14,13 @@
         <!-- Menu bar -->
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">
-                <MenuItem x:Name="MenuNewScene"  Header="_New Scene" />
-                <MenuItem x:Name="MenuOpenScene" Header="_Open Scene..." />
-                <MenuItem x:Name="MenuSaveScene" Header="_Save Scene" />
+                <MenuItem x:Name="MenuNewScene"      Header="_New Scene" />
+                <MenuItem x:Name="MenuOpenScene"     Header="_Open Scene..." />
+                <MenuItem x:Name="MenuSaveScene"     Header="_Save Scene" />
                 <Separator />
-                <MenuItem x:Name="MenuExit"      Header="E_xit" />
+                <MenuItem x:Name="MenuImportTileset" Header="_Import Tileset..." />
+                <Separator />
+                <MenuItem x:Name="MenuExit"          Header="E_xit" />
             </MenuItem>
         </Menu>
 
@@ -65,11 +67,20 @@
 
                 <!-- Assets panel -->
                 <Border Grid.Row="2" Padding="6">
-                    <StackPanel>
-                        <TextBlock Text="ASSETS"
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top"
+                                   Text="ASSETS"
                                    FontSize="10"
-                                   FontWeight="Bold" />
-                    </StackPanel>
+                                   FontWeight="Bold"
+                                   Margin="0,0,0,4" />
+                        <ListBox x:Name="AssetsList">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}" />
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
                 </Border>
             </Grid>
 

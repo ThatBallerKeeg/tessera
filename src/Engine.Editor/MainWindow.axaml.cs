@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -18,14 +19,18 @@ public partial class MainWindow : Window
     private string? _currentPath;
 
     // Tilemap editing state.
-    private TilemapData _activeLayer = new() { LayerName = "floor", LayerIndex = 0 };
+    private TilemapData  _activeLayer = new() { LayerName = "floor", LayerIndex = 0 };
     private TilesetData? _activeTileset;
-    private TileId _selectedTile = TileId.Empty;
-    private bool _isPainting;
+    private TileId       _selectedTile = TileId.Empty;
+    private bool         _isPainting;
 
     // Drag tracking for Rect and Line tools.
-    private Vector2Int  _dragStartTile;
+    private Vector2Int   _dragStartTile;
     private KeyModifiers _pressModifiers;
+
+    // Imported tilesets shown in the Assets panel.
+    private readonly ObservableCollection<TilesetData>  _importedTilesets = new();
+    private readonly Dictionary<TilesetData, Bitmap>    _tilesetBitmaps   = new();
 
     public MainWindow()
     {
@@ -39,10 +44,15 @@ public partial class MainWindow : Window
         SceneNameBox.TextChanged += OnSceneNameChanged;
 
         // File menu.
-        MenuNewScene.Click  += OnNewScene;
-        MenuOpenScene.Click += OnOpenScene;
-        MenuSaveScene.Click += OnSaveScene;
-        MenuExit.Click      += (_, _) => Close();
+        MenuNewScene.Click      += OnNewScene;
+        MenuOpenScene.Click     += OnOpenScene;
+        MenuSaveScene.Click     += OnSaveScene;
+        MenuImportTileset.Click += OnImportTilesetMenu;
+        MenuExit.Click          += (_, _) => Close();
+
+        // Assets panel.
+        AssetsList.ItemsSource      = _importedTilesets;
+        AssetsList.SelectionChanged += OnAssetSelected;
 
         // Tilemap tool panel.
         TilemapPanel.SetLayers([_activeLayer]);
@@ -59,48 +69,116 @@ public partial class MainWindow : Window
         MainViewport.ViewportPointerReleased += OnViewportPointerReleased;
     }
 
-    // ── Tileset loading ───────────────────────────────────────────────────────
+    // ── Tileset import ────────────────────────────────────────────────────────
 
-    private void OnTilesetLoadRequested(string path)
+    private async void OnImportTilesetMenu(object? sender, RoutedEventArgs e)
+    {
+        var files = await GetTopLevel(this)!.StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                Title = "Import Tileset PNG",
+                AllowMultiple = false,
+                FileTypeFilter =
+                [
+                    new FilePickerFileType("PNG Image") { Patterns = ["*.png"] },
+                    new FilePickerFileType("All Files") { Patterns = ["*"] },
+                ],
+            });
+
+        if (files is not [var file]) return;
+        ImportTileset(file.Path.LocalPath);
+    }
+
+    private void OnTilesetLoadRequested(string path) => ImportTileset(path);
+
+    private void ImportTileset(string pngPath)
     {
         Bitmap avBitmap;
-        try
-        {
-            avBitmap = new Bitmap(path);
-        }
+        try { avBitmap = new Bitmap(pngPath); }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[Editor] Failed to load tileset image: {ex.Message}");
             return;
         }
 
-        int imageW = avBitmap.PixelSize.Width;
-        int imageH = avBitmap.PixelSize.Height;
-        int tileW  = 16;
-        int tileH  = 16;
+        string name   = Path.GetFileNameWithoutExtension(pngPath);
+        int    imageW = avBitmap.PixelSize.Width;
+        int    imageH = avBitmap.PixelSize.Height;
 
-        var tileset = new TilesetData
+        // Load from sidecar if one exists; otherwise generate defaults.
+        TilesetData tileset;
+        string? sidecar = TilesetSerializer.FindSidecar(pngPath);
+        if (sidecar is not null)
         {
-            Name      = Path.GetFileNameWithoutExtension(path),
-            ImagePath = path,
-            TileSize  = new Vector2Int(tileW, tileH),
-        };
-
-        int cols = System.Math.Max(1, imageW / tileW);
-        int rows = System.Math.Max(1, imageH / tileH);
-        for (int r = 0; r < rows; r++)
-        for (int c = 0; c < cols; c++)
-            tileset.Tiles.Add(new TileMetadata
+            try
             {
-                Id          = new TileId(r * cols + c + 1),
-                BlobVariant = -1,
-            });
+                tileset = TilesetSerializer.Load(sidecar, name, pngPath, imageW, imageH);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Editor] Failed to load tileset sidecar: {ex.Message}");
+                tileset = TilesetSerializer.Generate(name, pngPath, imageW, imageH, new Vector2Int(16, 16));
+            }
+        }
+        else
+        {
+            tileset = TilesetSerializer.Generate(name, pngPath, imageW, imageH, new Vector2Int(16, 16));
+        }
 
+        // Save canonical tileset JSON to <project>/Assets/Tilesets/.
+        try
+        {
+            string projectDir = _currentPath is not null
+                ? Path.GetDirectoryName(_currentPath)!
+                : Path.GetDirectoryName(pngPath)!;
+            string tilesetDir = Path.Combine(projectDir, "Assets", "Tilesets");
+            Directory.CreateDirectory(tilesetDir);
+            string savePath  = Path.Combine(tilesetDir, name + ".tileset.json");
+            int    imageCols = System.Math.Max(1, imageW / tileset.TileSize.X);
+            TilesetSerializer.Save(tileset, savePath, imageCols);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Editor] Failed to save tileset JSON: {ex.Message}");
+        }
+
+        // Register in the Assets panel, replacing any previous entry with the same name.
+        TilesetData? existing = null;
+        foreach (var t in _importedTilesets)
+            if (t.Name == tileset.Name) { existing = t; break; }
+
+        if (existing is not null)
+        {
+            int idx = _importedTilesets.IndexOf(existing);
+            _importedTilesets[idx] = tileset;
+            _tilesetBitmaps.Remove(existing);
+        }
+        else
+        {
+            _importedTilesets.Add(tileset);
+        }
+        _tilesetBitmaps[tileset] = avBitmap;
+
+        ActivateTileset(tileset, avBitmap);
+    }
+
+    private void ActivateTileset(TilesetData tileset, Bitmap avBitmap)
+    {
         _activeTileset = tileset;
+        if (!ReferenceEquals(AssetsList.SelectedItem, tileset))
+            AssetsList.SelectedItem = tileset;
         TilemapPanel.SetPaletteContent(avBitmap, tileset);
+        MainViewport.LoadTilemapLayer(_activeLayer, tileset, tileset.ImagePath);
+    }
 
-        // Queue texture load + renderer setup inside the MonoGame tick loop.
-        MainViewport.LoadTilemapLayer(_activeLayer, tileset, path);
+    private void OnAssetSelected(object? sender, SelectionChangedEventArgs e)
+    {
+        if (AssetsList.SelectedItem is TilesetData tileset &&
+            !ReferenceEquals(tileset, _activeTileset) &&
+            _tilesetBitmaps.TryGetValue(tileset, out var bm))
+        {
+            ActivateTileset(tileset, bm);
+        }
     }
 
     // ── Layer management ──────────────────────────────────────────────────────
@@ -208,7 +286,7 @@ public partial class MainWindow : Window
     {
         var id = _activeLayer.GetTile(tile);
         if (id == TileId.Empty) return;
-        TilemapPanel.SelectTileById(id);   // fires TileSelected → _selectedTile updated
+        TilemapPanel.SelectTileById(id);
         TilemapPanel.SetActiveTool(EditorTool.Paint);
     }
 
@@ -331,7 +409,10 @@ public partial class MainWindow : Window
         _scene = new SceneData();
         _activeLayer = new TilemapData { LayerName = "floor", LayerIndex = 0 };
         _scene.Tilemaps.Add(_activeLayer);
-        _currentPath = null;
+        _currentPath   = null;
+        _activeTileset = null;
+        _importedTilesets.Clear();
+        _tilesetBitmaps.Clear();
         SceneNameBox.Text = _scene.Name;
         TilemapPanel.SetLayers([_activeLayer]);
         Title = "Tessera Engine Editor";
