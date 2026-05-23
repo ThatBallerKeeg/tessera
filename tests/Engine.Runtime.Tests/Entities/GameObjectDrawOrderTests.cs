@@ -10,7 +10,14 @@ public class GameObjectDrawOrderTests
     // ── Stubs ─────────────────────────────────────────────────────────────────
 
     /// <summary>No-op ISpriteBatch; components don't need it for order-recording tests.</summary>
-    private sealed class StubSpriteBatch : ISpriteBatch { }
+    private sealed class StubSpriteBatch : ISpriteBatch
+    {
+        public void DrawSprite(
+            Microsoft.Xna.Framework.Graphics.Texture2D? texture,
+            Microsoft.Xna.Framework.Rectangle source,
+            Microsoft.Xna.Framework.Rectangle destination,
+            Microsoft.Xna.Framework.Color tint) { }
+    }
 
     /// <summary>
     /// On OnDraw, appends the owner's Y position to a shared list so tests can

@@ -18,6 +18,15 @@ public class EngineGame : Game
     /// <summary>The currently active live scene (null until <see cref="LoadScene"/> is called).</summary>
     protected Scene? _activeScene;
 
+    // ── Shared resources ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Shared texture cache for this game instance.
+    /// Created in <see cref="Initialize"/>; injected into components at scene-load time
+    /// so all renderers share a single GPU texture per path.
+    /// </summary>
+    protected TextureCache? TextureCache { get; private set; }
+
     // ── Rendering (standalone game path) ─────────────────────────────────────
 
     // ViewportGame overrides Draw entirely (renders to an offscreen RenderTarget).
@@ -43,6 +52,7 @@ public class EngineGame : Game
     protected override void Initialize()
     {
         base.Initialize();
+        TextureCache       = new TextureCache(GraphicsDevice);
         _sceneBatch        = new SpriteBatch(GraphicsDevice);
         _sceneBatchAdapter = new SpriteBatchAdapter(_sceneBatch);
     }
@@ -88,7 +98,10 @@ public class EngineGame : Game
     protected override void Dispose(bool disposing)
     {
         if (disposing)
+        {
             _sceneBatch?.Dispose();
+            TextureCache?.Dispose();
+        }
         base.Dispose(disposing);
     }
 
