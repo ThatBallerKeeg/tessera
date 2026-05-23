@@ -1,13 +1,19 @@
 using System.Collections.ObjectModel;
+using System.Runtime.InteropServices;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Platform.Storage;
+using Engine.Core.Animation;
 using Engine.Core.Math;
 using Engine.Core.Scene;
 using Engine.Core.Serialization;
+using Engine.Core.Sprites;
 using Engine.Core.Tiles;
+using Engine.Editor.Animation;
 using Engine.Editor.Tilemap;
 
 namespace Engine.Editor;
@@ -28,9 +34,16 @@ public partial class MainWindow : Window
     private Vector2Int   _dragStartTile;
     private KeyModifiers _pressModifiers;
 
-    // Imported tilesets shown in the Assets panel.
+    // Tilesets.
     private readonly ObservableCollection<TilesetData>  _importedTilesets = new();
     private readonly Dictionary<TilesetData, Bitmap>    _tilesetBitmaps   = new();
+
+    // Spritesheets + animation clips.
+    private readonly List<SpritesheetBundle>       _importedSpritesheets = new();
+    private SpritesheetBundle?                     _activeBundle;
+
+    // Merged asset list shown in the Assets panel (TilesetData | SpritesheetBundle).
+    private readonly ObservableCollection<object>  _allAssets = new();
 
     public MainWindow()
     {
@@ -48,10 +61,11 @@ public partial class MainWindow : Window
         MenuOpenScene.Click     += OnOpenScene;
         MenuSaveScene.Click     += OnSaveScene;
         MenuImportTileset.Click += OnImportTilesetMenu;
+        MenuLoadFixture.Click   += OnLoadTestFixture;
         MenuExit.Click          += (_, _) => Close();
 
-        // Assets panel.
-        AssetsList.ItemsSource      = _importedTilesets;
+        // Assets panel (shows tilesets and spritesheet bundles in one merged list).
+        AssetsList.ItemsSource      = _allAssets;
         AssetsList.SelectionChanged += OnAssetSelected;
 
         // Tilemap tool panel.
@@ -159,6 +173,7 @@ public partial class MainWindow : Window
         }
         _tilesetBitmaps[tileset] = avBitmap;
 
+        RebuildAllAssets();
         ActivateTileset(tileset, avBitmap);
     }
 
@@ -175,6 +190,16 @@ public partial class MainWindow : Window
         MainViewport.LoadTilemapLayer(_activeLayer, tileset, tileset.ImagePath);
         MainViewport.SetTileSize(tileset.TileSize.X, tileset.TileSize.Y);
         UpdateGhost();
+        ToolTabControl.SelectedIndex = 0;   // jump to Tilemap tab
+    }
+
+    private void ActivateSpritesheet(SpritesheetBundle bundle)
+    {
+        _activeBundle = bundle;
+        if (!ReferenceEquals(AssetsList.SelectedItem, bundle))
+            AssetsList.SelectedItem = bundle;
+        AnimationPanel.SetContent(bundle.Sheet, bundle.Bitmap, bundle.Clips);
+        ToolTabControl.SelectedIndex = 1;   // jump to Animation tab
     }
 
     private void OnAssetSelected(object? sender, SelectionChangedEventArgs e)
@@ -184,6 +209,11 @@ public partial class MainWindow : Window
             _tilesetBitmaps.TryGetValue(tileset, out var bm))
         {
             ActivateTileset(tileset, bm);
+        }
+        else if (AssetsList.SelectedItem is SpritesheetBundle bundle &&
+                 !ReferenceEquals(bundle, _activeBundle))
+        {
+            ActivateSpritesheet(bundle);
         }
     }
 
@@ -466,6 +496,10 @@ public partial class MainWindow : Window
         _selectedTile  = TileId.Empty;
         _importedTilesets.Clear();
         _tilesetBitmaps.Clear();
+        _importedSpritesheets.Clear();
+        _activeBundle = null;
+        _allAssets.Clear();
+        AnimationPanel.SetContent(null, null, null);
         SceneNameBox.Text = _scene.Name;
         TilemapPanel.SetLayers([_activeLayer]);
         MainViewport.SetGhostTile(null, 0, 0, 0, 0);
@@ -535,5 +569,117 @@ public partial class MainWindow : Window
         SceneSerializer.Save(_scene, stream);
         _currentPath = file.Path.LocalPath;
         Title = $"Tessera Engine Editor — {Path.GetFileName(_currentPath)}";
+    }
+
+    // ── Assets panel ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Rebuilds <see cref="_allAssets"/> from the live tileset and spritesheet lists.
+    /// Tilesets appear first (matching the historical order), followed by spritesheet bundles.
+    /// </summary>
+    private void RebuildAllAssets()
+    {
+        _allAssets.Clear();
+        foreach (var t in _importedTilesets)     _allAssets.Add(t);
+        foreach (var s in _importedSpritesheets) _allAssets.Add(s);
+    }
+
+    // ── Test fixture ──────────────────────────────────────────────────────────
+
+    private void OnLoadTestFixture(object? sender, RoutedEventArgs e)
+    {
+        var bundle = CreateTestFixture();
+        _importedSpritesheets.Add(bundle);
+        RebuildAllAssets();
+        ActivateSpritesheet(bundle);
+    }
+
+    /// <summary>
+    /// Hand-constructs a <see cref="SpritesheetBundle"/> with 4 16×16 frames and two clips
+    /// ("walk_south" — 4 frames × 100 ms, looping; "idle_south" — 1 frame × 500 ms, looping)
+    /// plus a programmatic BGRA8888 bitmap with one distinct solid colour per frame.
+    /// Used for manual verification of the Animation panel before Aseprite import (Task 2.6).
+    /// </summary>
+    private static SpritesheetBundle CreateTestFixture()
+    {
+        const int fw = 16, fh = 16, frameCount = 4;
+
+        var sheet = SpritesheetData.GenerateGrid(
+            name:      "test_fixture",
+            imagePath: "",
+            imageSize: new Engine.Core.Math.Vector2Int(fw * frameCount, fh),
+            frameSize: new Engine.Core.Math.Vector2Int(fw, fh));
+
+        var walkSouth = new AnimationClip
+        {
+            Name  = "walk_south",
+            Loops = true,
+            Frames =
+            [
+                new AnimationClipFrame { SpriteId = new SpriteId(1), DurationMs = 100 },
+                new AnimationClipFrame { SpriteId = new SpriteId(2), DurationMs = 100 },
+                new AnimationClipFrame { SpriteId = new SpriteId(3), DurationMs = 100 },
+                new AnimationClipFrame { SpriteId = new SpriteId(4), DurationMs = 100 },
+            ],
+        };
+
+        var idleSouth = new AnimationClip
+        {
+            Name  = "idle_south",
+            Loops = true,
+            Frames =
+            [
+                new AnimationClipFrame { SpriteId = new SpriteId(1), DurationMs = 500 },
+            ],
+        };
+
+        var bitmap = CreateFixtureBitmap(fw, fh, frameCount);
+        return new SpritesheetBundle(sheet, bitmap, [walkSouth, idleSouth]);
+    }
+
+    /// <summary>
+    /// Creates a <see cref="WriteableBitmap"/> containing <paramref name="frameCount"/>
+    /// solid-colour blocks each <paramref name="fw"/>×<paramref name="fh"/> pixels wide,
+    /// laid out horizontally.  The colours cycle through red, green, blue, and yellow so
+    /// each frame is visually distinct in the thumbnail strip.
+    /// </summary>
+    private static WriteableBitmap CreateFixtureBitmap(int fw, int fh, int frameCount)
+    {
+        // BGRA8888 layout: [blue, green, red, alpha] per pixel.
+        ReadOnlySpan<(byte B, byte G, byte R)> palette = stackalloc (byte, byte, byte)[]
+        {
+            (0,   0,   255), // frame 0 — red
+            (0,   200, 0  ), // frame 1 — green
+            (220, 0,   0  ), // frame 2 — blue
+            (0,   200, 200), // frame 3 — yellow
+        };
+
+        int totalW  = fw * frameCount;
+        int stride  = totalW * 4;
+        var pixels  = new byte[stride * fh];
+
+        for (int fi = 0; fi < frameCount; fi++)
+        {
+            var (b, g, r) = palette[fi % palette.Length];
+            for (int py = 0; py < fh; py++)
+            for (int px = 0; px < fw; px++)
+            {
+                int off = (py * totalW + fi * fw + px) * 4;
+                pixels[off    ] = b;
+                pixels[off + 1] = g;
+                pixels[off + 2] = r;
+                pixels[off + 3] = 255;
+            }
+        }
+
+        var wb = new WriteableBitmap(
+            new PixelSize(totalW, fh),
+            new Vector(96, 96),
+            PixelFormat.Bgra8888,
+            AlphaFormat.Opaque);
+
+        using var fb = wb.Lock();
+        Marshal.Copy(pixels, 0, fb.Address, pixels.Length);
+        return wb;
     }
 }

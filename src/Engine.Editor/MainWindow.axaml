@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:viewport="clr-namespace:Engine.Editor.Viewport"
         xmlns:tilemap="clr-namespace:Engine.Editor.Tilemap"
+        xmlns:animation="clr-namespace:Engine.Editor.Animation"
         x:Class="Engine.Editor.MainWindow"
         Title="Tessera Engine Editor"
         Width="1400"
@@ -20,11 +21,13 @@
                 <Separator />
                 <MenuItem x:Name="MenuImportTileset" Header="_Import Tileset..." />
                 <Separator />
+                <MenuItem x:Name="MenuLoadFixture"   Header="Load Test _Fixture" />
+                <Separator />
                 <MenuItem x:Name="MenuExit"          Header="E_xit" />
             </MenuItem>
         </Menu>
 
-        <!-- Five-panel layout: Left | Viewport | Tilemap tools | Inspector -->
+        <!-- Five-panel layout: Left | Viewport | Tool panels (Tilemap/Animation) | Inspector -->
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="200" MinWidth="120" />
@@ -97,8 +100,20 @@
                           VerticalAlignment="Stretch"
                           ResizeDirection="Columns" />
 
-            <!-- ── Tilemap tools panel ── -->
-            <tilemap:TilemapToolPanel x:Name="TilemapPanel" Grid.Column="4" />
+            <!-- ── Tool panels: Tilemap and Animation share column 4 via tabs ──
+                 Users author tilemaps or sprites at a given moment, not both
+                 simultaneously, so a tab switcher is the natural fit.
+                 ToolTabControl.SelectedIndex is set in code when an asset is
+                 activated so the right panel jumps to the front automatically. -->
+            <TabControl Grid.Column="4"
+                        x:Name="ToolTabControl">
+                <TabItem Header="Tilemap">
+                    <tilemap:TilemapToolPanel x:Name="TilemapPanel" />
+                </TabItem>
+                <TabItem Header="Animation">
+                    <animation:AnimationToolPanel x:Name="AnimationPanel" />
+                </TabItem>
+            </TabControl>
 
             <!-- Right vertical splitter (Tilemap | Inspector) -->
             <GridSplitter Grid.Column="5"

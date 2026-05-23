@@ -26,6 +26,9 @@
     <Compile Update="Tilemap\TilemapToolPanel.axaml.cs">
       <DependentUpon>TilemapToolPanel.axaml</DependentUpon>
     </Compile>
+    <Compile Update="Animation\AnimationToolPanel.axaml.cs">
+      <DependentUpon>AnimationToolPanel.axaml</DependentUpon>
+    </Compile>
   </ItemGroup>
 
 </Project>

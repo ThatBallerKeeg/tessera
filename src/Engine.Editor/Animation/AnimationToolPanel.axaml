@@ -1,0 +1,79 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Engine.Editor.Animation.AnimationToolPanel">
+    <DockPanel>
+
+        <!-- ── Panel header ── -->
+        <TextBlock DockPanel.Dock="Top"
+                   Text="ANIMATION"
+                   FontSize="10"
+                   FontWeight="Bold"
+                   Margin="6,6,6,4" />
+
+        <!-- ── Clip browser ── -->
+        <TextBlock DockPanel.Dock="Top"
+                   Text="CLIPS"
+                   FontSize="10"
+                   Foreground="#888888"
+                   Margin="6,0,6,2" />
+
+        <!--  MaxHeight caps the browser at ~5 rows so frames always have space below.  -->
+        <ListBox DockPanel.Dock="Top"
+                 x:Name="ClipBrowser"
+                 MaxHeight="150"
+                 Margin="4,0,4,4"
+                 SelectionChanged="OnClipSelectionChanged">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding Name}" Padding="2,1" />
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <Separator DockPanel.Dock="Top" Margin="0,0,0,4" />
+
+        <!-- ── Frame list header ── -->
+        <TextBlock DockPanel.Dock="Top"
+                   Text="FRAMES"
+                   FontSize="10"
+                   Foreground="#888888"
+                   Margin="6,0,6,2" />
+
+        <!-- ── Frame list (fills remaining vertical space) ──
+             Each row shows a cropped thumbnail, the SpriteId, and the DurationMs.
+             The thumbnail is rendered via RenderTargetBitmap crop in code-behind,
+             using the same DrawImage pattern as the ghost-tile preview. -->
+        <ListBox x:Name="FrameList"
+                 Margin="4,0,4,4">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <DockPanel Height="44" Margin="2,1">
+
+                        <!-- Thumbnail — 40×40 display box; content is pixel-exact via Stretch="Uniform" -->
+                        <Border DockPanel.Dock="Left"
+                                Width="40"
+                                Height="40"
+                                Background="#111111"
+                                Margin="0,0,8,0"
+                                VerticalAlignment="Center">
+                            <Image Source="{Binding Thumbnail}"
+                                   Stretch="Uniform"
+                                   RenderOptions.BitmapInterpolationMode="None" />
+                        </Border>
+
+                        <!-- SpriteId + duration stacked vertically -->
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding SpriteIdText}"
+                                       FontSize="12" />
+                            <TextBlock Text="{Binding DurationText}"
+                                       FontSize="11"
+                                       Foreground="#888888" />
+                        </StackPanel>
+
+                    </DockPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+    </DockPanel>
+</UserControl>
