@@ -43,6 +43,14 @@ public partial class TilemapToolPanel : UserControl
     private readonly ObservableCollection<TilesetData> _tilesets = new();
     private readonly ObservableCollection<TilemapData> _layers   = new();
 
+    /// <summary>
+    /// Display scale applied to the tile palette. Each source pixel is rendered as a
+    /// PaletteScale × PaletteScale block so tiles are readable at typical monitor sizes.
+    /// Hit-detection divides display coords by this value; SelectionBorder positions and
+    /// sizes are multiplied by it.
+    /// </summary>
+    private const int PaletteScale = 3;
+
     private TilesetData? _activeTileset;
     private Bitmap?      _paletteBitmap;
 
@@ -90,6 +98,8 @@ public partial class TilemapToolPanel : UserControl
 
     /// <summary>
     /// Displays <paramref name="bitmap"/> as the tile palette for <paramref name="tileset"/>.
+    /// The image is shown at <see cref="PaletteScale"/>× its natural pixel size so individual
+    /// tiles are large enough to read and click.
     /// </summary>
     public void SetPaletteContent(Bitmap bitmap, TilesetData tileset)
     {
@@ -97,9 +107,11 @@ public partial class TilemapToolPanel : UserControl
             _tilesets.Add(tileset);
         TilesetSelector.SelectedItem = tileset;
 
-        _paletteBitmap     = bitmap;
-        _activeTileset     = tileset;
+        _paletteBitmap      = bitmap;
+        _activeTileset      = tileset;
         PaletteImage.Source = bitmap;
+        PaletteImage.Width  = bitmap.PixelSize.Width  * PaletteScale;
+        PaletteImage.Height = bitmap.PixelSize.Height * PaletteScale;
 
         SelectionBorder.IsVisible = false;
         SelectedTileLabel.Text    = "Selected: —";
@@ -125,10 +137,10 @@ public partial class TilemapToolPanel : UserControl
         SelectedTileLabel.Text = $"Selected: {id.Value}";
         TileSelected?.Invoke(id);
 
-        Avalonia.Controls.Canvas.SetLeft(SelectionBorder, tileX * tileW);
-        Avalonia.Controls.Canvas.SetTop(SelectionBorder,  tileY * tileH);
-        SelectionBorder.Width     = tileW;
-        SelectionBorder.Height    = tileH;
+        Avalonia.Controls.Canvas.SetLeft(SelectionBorder, tileX * tileW * PaletteScale);
+        Avalonia.Controls.Canvas.SetTop(SelectionBorder,  tileY * tileH * PaletteScale);
+        SelectionBorder.Width     = tileW * PaletteScale;
+        SelectionBorder.Height    = tileH * PaletteScale;
         SelectionBorder.IsVisible = true;
     }
 
@@ -262,13 +274,15 @@ public partial class TilemapToolPanel : UserControl
         if (_activeTileset is null || _paletteBitmap is null) return;
         if (!e.GetCurrentPoint(PaletteGrid).Properties.IsLeftButtonPressed) return;
 
+        // pos is in display space (PaletteScale× larger than source pixels).
+        // Divide by PaletteScale to get the source-pixel coordinate for tile calculation.
         var pos   = e.GetPosition(PaletteImage);
         int tileW = _activeTileset.TileSize.X;
         int tileH = _activeTileset.TileSize.Y;
         if (tileW <= 0 || tileH <= 0) return;
 
-        int tileX = (int)(pos.X / tileW);
-        int tileY = (int)(pos.Y / tileH);
+        int tileX = (int)(pos.X / (tileW * PaletteScale));
+        int tileY = (int)(pos.Y / (tileH * PaletteScale));
         int cols  = _paletteBitmap.PixelSize.Width / tileW;
         int id    = tileY * cols + tileX + 1;
 
@@ -276,10 +290,11 @@ public partial class TilemapToolPanel : UserControl
         SelectedTileLabel.Text = $"Selected: {id}";
         TileSelected?.Invoke(SelectedTile);
 
-        Avalonia.Controls.Canvas.SetLeft(SelectionBorder, tileX * tileW);
-        Avalonia.Controls.Canvas.SetTop(SelectionBorder,  tileY * tileH);
-        SelectionBorder.Width     = tileW;
-        SelectionBorder.Height    = tileH;
+        // Selection border is positioned in display space — multiply by PaletteScale.
+        Avalonia.Controls.Canvas.SetLeft(SelectionBorder, tileX * tileW * PaletteScale);
+        Avalonia.Controls.Canvas.SetTop(SelectionBorder,  tileY * tileH * PaletteScale);
+        SelectionBorder.Width     = tileW * PaletteScale;
+        SelectionBorder.Height    = tileH * PaletteScale;
         SelectionBorder.IsVisible = true;
     }
 

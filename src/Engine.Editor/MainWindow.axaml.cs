@@ -57,8 +57,8 @@ public partial class MainWindow : Window
         // Tilemap tool panel.
         TilemapPanel.SetLayers([_activeLayer]);
         TilemapPanel.TilesetLoadRequested += OnTilesetLoadRequested;
-        TilemapPanel.TileSelected += tile => _selectedTile = tile;
-        TilemapPanel.ToolChanged  += _ => { };
+        TilemapPanel.TileSelected += tile => { _selectedTile = tile; UpdateGhost(); };
+        TilemapPanel.ToolChanged  += _    => UpdateGhost();
         TilemapPanel.LayerChanged += layer => _activeLayer = layer ?? _activeLayer;
         TilemapPanel.LayerAdded   += OnLayerAdded;
         TilemapPanel.LayerRemoved += OnLayerRemoved;
@@ -165,10 +165,16 @@ public partial class MainWindow : Window
     private void ActivateTileset(TilesetData tileset, Bitmap avBitmap)
     {
         _activeTileset = tileset;
+        // SetPaletteContent resets the panel's SelectedTile but does NOT fire TileSelected,
+        // so _selectedTile here would stay at the previous value and UpdateGhost() would try
+        // to render the old tile ID against the new tileset's bitmap.  Reset explicitly.
+        _selectedTile  = TileId.Empty;
         if (!ReferenceEquals(AssetsList.SelectedItem, tileset))
             AssetsList.SelectedItem = tileset;
         TilemapPanel.SetPaletteContent(avBitmap, tileset);
         MainViewport.LoadTilemapLayer(_activeLayer, tileset, tileset.ImagePath);
+        MainViewport.SetTileSize(tileset.TileSize.X, tileset.TileSize.Y);
+        UpdateGhost();
     }
 
     private void OnAssetSelected(object? sender, SelectionChangedEventArgs e)
@@ -356,18 +362,64 @@ public partial class MainWindow : Window
     private Vector2Int PixelToTile(Avalonia.Point pt)
     {
         if (_activeTileset is null) return default;
-        int tileW = _activeTileset.TileSize.X;
-        int tileH = _activeTileset.TileSize.Y;
-        if (tileW <= 0 || tileH <= 0) return default;
-        return new Vector2Int((int)(pt.X / tileW), (int)(pt.Y / tileH));
+        int   tileW = _activeTileset.TileSize.X;
+        int   tileH = _activeTileset.TileSize.Y;
+        int   zoom  = MainViewport.Zoom;
+        float panX  = MainViewport.PanX;
+        float panY  = MainViewport.PanY;
+        if (tileW <= 0 || tileH <= 0 || zoom <= 0) return default;
+        // screen pixel → world pixel → tile coordinate
+        double worldX = pt.X / zoom + panX;
+        double worldY = pt.Y / zoom + panY;
+        return new Vector2Int(
+            (int)System.Math.Floor(worldX / tileW),
+            (int)System.Math.Floor(worldY / tileH));
     }
 
     private Avalonia.Point TileCenter(Vector2Int tile)
     {
         if (_activeTileset is null) return new(tile.X, tile.Y);
-        return new(
-            tile.X * _activeTileset.TileSize.X + _activeTileset.TileSize.X * 0.5,
-            tile.Y * _activeTileset.TileSize.Y + _activeTileset.TileSize.Y * 0.5);
+        int   tileW = _activeTileset.TileSize.X;
+        int   tileH = _activeTileset.TileSize.Y;
+        int   zoom  = MainViewport.Zoom;
+        float panX  = MainViewport.PanX;
+        float panY  = MainViewport.PanY;
+        // world-pixel center of the tile, projected to screen coordinates
+        double worldX = tile.X * tileW + tileW * 0.5;
+        double worldY = tile.Y * tileH + tileH * 0.5;
+        return new((worldX - panX) * zoom, (worldY - panY) * zoom);
+    }
+
+    /// <summary>
+    /// Pushes the current ghost-tile state to the viewport.
+    /// Shows a 50%-opacity preview of the selected tile in Paint mode; clears it otherwise.
+    /// </summary>
+    private void UpdateGhost()
+    {
+        if (TilemapPanel.ActiveTool != EditorTool.Paint ||
+            _selectedTile == TileId.Empty               ||
+            _activeTileset is null                      ||
+            !_tilesetBitmaps.TryGetValue(_activeTileset, out var bm))
+        {
+            MainViewport.SetGhostTile(null, 0, 0, 0, 0);
+            return;
+        }
+
+        int tileW = _activeTileset.TileSize.X;
+        int tileH = _activeTileset.TileSize.Y;
+        if (tileW <= 0 || tileH <= 0) { MainViewport.SetGhostTile(null, 0, 0, 0, 0); return; }
+
+        int cols = bm.PixelSize.Width / tileW;
+
+        // Use FindIndex — matches SelectTileById's formula exactly.  Do NOT use
+        // Value-1 directly: sidecar-loaded tilesets may store tiles in non-sequential
+        // order, making Value-1 give the wrong row for any tile past the first row.
+        int idx = _activeTileset.Tiles.FindIndex(t => t.Id == _selectedTile);
+        if (idx < 0) { MainViewport.SetGhostTile(null, 0, 0, 0, 0); return; }
+
+        int srcX = (idx % cols) * tileW;
+        int srcY = (idx / cols) * tileH;
+        MainViewport.SetGhostTile(bm, srcX, srcY, tileW, tileH);
     }
 
     private string GetTerrainTag(TileId id)
@@ -411,10 +463,12 @@ public partial class MainWindow : Window
         _scene.Tilemaps.Add(_activeLayer);
         _currentPath   = null;
         _activeTileset = null;
+        _selectedTile  = TileId.Empty;
         _importedTilesets.Clear();
         _tilesetBitmaps.Clear();
         SceneNameBox.Text = _scene.Name;
         TilemapPanel.SetLayers([_activeLayer]);
+        MainViewport.SetGhostTile(null, 0, 0, 0, 0);
         Title = "Tessera Engine Editor";
     }
 

@@ -91,14 +91,22 @@
 
         <Separator DockPanel.Dock="Top" Margin="0,2,0,4" />
 
-        <!-- Palette (fills remaining vertical space) -->
+        <!-- Palette (fills remaining vertical space).
+             PaletteImage Width/Height are set in code to bitmap.PixelSize × PaletteScale (3×)
+             so tiles are large enough to read and click.  Stretch="Fill" + BitmapInterpolationMode="None"
+             gives crisp nearest-neighbour upscaling.  The Grid auto-sizes to the Image, and the
+             ScrollViewer scrolls the 3× content when the panel is smaller.
+             Because the Image has an explicit 3× display size, GetPosition(PaletteImage) returns
+             display-pixel coords (0 … w*3), so hit-detection divides by PaletteScale before the
+             tile-index calculation, and the SelectionBorder positions/sizes are multiplied by PaletteScale. -->
         <ScrollViewer HorizontalScrollBarVisibility="Auto"
                       VerticalScrollBarVisibility="Auto">
             <Grid x:Name="PaletteGrid"
                   HorizontalAlignment="Left"
                   VerticalAlignment="Top">
                 <Image x:Name="PaletteImage"
-                       Stretch="None"
+                       Stretch="Fill"
+                       RenderOptions.BitmapInterpolationMode="None"
                        HorizontalAlignment="Left"
                        VerticalAlignment="Top" />
                 <Canvas x:Name="SelectionCanvas"

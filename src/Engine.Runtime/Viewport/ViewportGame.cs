@@ -38,6 +38,26 @@ public class ViewportGame : EngineGame
     private float _mouseY;
     private readonly object _mouseLock = new();
 
+    // ── Camera ────────────────────────────────────────────────────────────────
+
+    // Set by the editor each tick before TickPublic so the render is always fresh.
+    // All access is on the Avalonia main thread (DispatcherTimer + TickPublic), so no locking needed.
+    private float _cameraPanX;
+    private float _cameraPanY;
+    private int   _cameraZoom = 1;
+
+    /// <summary>
+    /// Updates the camera transform used in the next Draw call.
+    /// <paramref name="panX"/>/<paramref name="panY"/> are in world pixels;
+    /// <paramref name="zoom"/> must be a positive integer (1, 2, 4, 8 …).
+    /// </summary>
+    public void SetCamera(float panX, float panY, int zoom)
+    {
+        _cameraPanX = panX;
+        _cameraPanY = panY;
+        _cameraZoom = zoom > 0 ? zoom : 1;
+    }
+
     // ── Tilemap rendering ─────────────────────────────────────────────────────
 
     private SpriteBatch?    _spriteBatch;
@@ -173,11 +193,26 @@ public class ViewportGame : EngineGame
     {
         if (_tilemapRenderer is null || _spriteBatch is null) return;
 
-        var camera = new Rectangle(0, 0, _targetWidth, _targetHeight);
-        var clock  = new TilemapClock((long)gameTime.TotalGameTime.TotalMilliseconds);
+        float panX = _cameraPanX;
+        float panY = _cameraPanY;
+        int   zoom = _cameraZoom;
 
-        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
-        _tilemapRenderer.Render(camera, _spriteBatch, ctx => ctx.Texture, clock);
+        // Visible world-pixel rectangle used for chunk frustum culling.
+        var worldCamera = new Rectangle(
+            (int)panX,
+            (int)panY,
+            (int)System.Math.Ceiling((double)_targetWidth  / zoom),
+            (int)System.Math.Ceiling((double)_targetHeight / zoom));
+
+        // SpriteBatch transform: shift by -pan then scale by zoom.
+        // Tiles are stored in world-pixel coords; the matrix converts them to screen pixels.
+        var matrix = Matrix.CreateTranslation(-panX, -panY, 0f)
+                   * Matrix.CreateScale(zoom, zoom, 1f);
+
+        var clock = new TilemapClock((long)gameTime.TotalGameTime.TotalMilliseconds);
+
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: matrix);
+        _tilemapRenderer.Render(worldCamera, _spriteBatch, ctx => ctx.Texture, clock);
         _spriteBatch.End();
     }
 
