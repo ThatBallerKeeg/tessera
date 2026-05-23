@@ -8,7 +8,7 @@ public static class SceneSerializer
 {
     private const int CurrentVersion = 1;
 
-    private static readonly JsonSerializerOptions Options = new()
+    internal static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -19,6 +19,9 @@ public static class SceneSerializer
             new TileIdJsonConverter(),
             new ChunkCoordJsonConverter(),
             new ChunkDataJsonConverter(),
+            // Phase 2: sprite / spritesheet types.
+            new SpriteIdJsonConverter(),
+            new RectangleJsonConverter(),
         },
     };
 
