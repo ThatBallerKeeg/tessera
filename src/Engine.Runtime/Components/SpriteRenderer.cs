@@ -47,13 +47,19 @@ public sealed class SpriteRenderer : Component
     /// <inheritdoc/>
     public override void OnDraw(ISpriteBatch spriteBatch)
     {
-        if (Spritesheet is null || CurrentFrame == SpriteId.Empty) return;
+        if (Spritesheet is null) return;
+
+        // Prefer a sibling Animator's current frame; fall back to our own field
+        // so SpriteRenderer works for static (un-animated) sprites as well.
+        var animator = Owner?.GetComponent<Animator>();
+        var frameId  = animator is not null ? animator.CurrentSpriteId : CurrentFrame;
+        if (frameId == SpriteId.Empty) return;
 
         // Linear search over the frames list — avoid LINQ allocation on a hot path.
         SpriteFrame? frame = null;
         foreach (var f in Spritesheet.Frames)
         {
-            if (f.Id == CurrentFrame) { frame = f; break; }
+            if (f.Id == frameId) { frame = f; break; }
         }
         if (frame is null) return;
 
