@@ -137,6 +137,28 @@ public sealed class Animator : Component
     }
 
     /// <summary>
+    /// Rebuilds the cumulative frame-duration table from the current clip without
+    /// resetting <see cref="ElapsedMs"/>.  Call after editing frame durations mid-playback
+    /// so <see cref="OnUpdate"/> uses the new values immediately.
+    /// Clamps elapsed to the new total duration and recomputes <see cref="FrameIndex"/>.
+    /// No-op when no clip is set.
+    /// </summary>
+    public void ResyncClip()
+    {
+        if (_clip is null || _clip.Frames.Count == 0) return;
+        BuildCumulativeTable(_clip);
+        if (_totalDurationMs > 0f)
+        {
+            _elapsedMs  = _clip.Loops
+                ? _elapsedMs % _totalDurationMs
+                : System.Math.Clamp(_elapsedMs, 0f, _totalDurationMs);
+            _frameIndex     = ComputeFrameIndex(_elapsedMs);
+            CurrentSpriteId = _clip.Frames[_frameIndex].SpriteId;
+            _prevFrameIndex = _frameIndex;
+        }
+    }
+
+    /// <summary>
     /// Seeks to the start of the previous frame without firing events.
     /// On a looping clip wraps from frame 0 back to the last frame.
     /// On a non-looping clip clamps at frame 0.

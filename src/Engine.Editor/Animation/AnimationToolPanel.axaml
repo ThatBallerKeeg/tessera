@@ -17,7 +17,6 @@
                    Foreground="#888888"
                    Margin="6,0,6,2" />
 
-        <!--  MaxHeight caps the browser at ~5 rows so frames always have space below.  -->
         <ListBox DockPanel.Dock="Top"
                  x:Name="ClipBrowser"
                  MaxHeight="150"
@@ -30,21 +29,14 @@
             </ListBox.ItemTemplate>
         </ListBox>
 
-        <Separator DockPanel.Dock="Top" Margin="0,0,0,4" />
-
-        <TextBlock DockPanel.Dock="Top"
-                   Text="FRAMES"
-                   FontSize="10"
-                   Foreground="#888888"
-                   Margin="6,0,6,2" />
+        <Separator DockPanel.Dock="Top" Margin="0,0,0,2" />
 
         <!-- ══ Bottom section ══════════════════════════════════════════════════
-             DockPanel processes Bottom-docked items in source order, each
-             consuming the bottom edge of the remaining space.  The first item
-             listed becomes the lowest; later items stack upward.
+             First Bottom item = lowest visually.  Last Bottom item = just above
+             the FrameList fill element.
              Visual order top→bottom:
-               PREVIEW label → 64×64 preview image → separator →
-               TIMELINE label → scrubber canvas → transport buttons          -->
+               FRAMES label + "+" → FrameList → PREVIEW → image → sep →
+               TIMELINE → canvas → transport                                  -->
 
         <!-- Transport row — very bottom -->
         <StackPanel DockPanel.Dock="Bottom"
@@ -65,9 +57,8 @@
         </StackPanel>
 
         <!-- Scrubber canvas — above transport.
-             Children (track bar, frame boundary marks, event flags, playhead line)
-             are added and positioned entirely in code-behind.
-             SizeChanged is wired in the constructor so markers reposition on resize. -->
+             Right-click shows context menu; left-click / drag scrubs the playhead.
+             Children are managed entirely in code-behind. -->
         <Canvas DockPanel.Dock="Bottom"
                 x:Name="TimelineCanvas"
                 Height="28"
@@ -87,8 +78,7 @@
 
         <Separator DockPanel.Dock="Bottom" Margin="0,2,0,0" />
 
-        <!-- Live preview — 64×64 display area, frame scaled to fit (4× for 16×16 sprites).
-             BitmapInterpolationMode=None preserves the pixel-art look. -->
+        <!-- Live preview — 64×64 area, BitmapInterpolationMode=None for pixel-art -->
         <Border DockPanel.Dock="Bottom"
                 Width="64"
                 Height="64"
@@ -100,39 +90,78 @@
                    RenderOptions.BitmapInterpolationMode="None" />
         </Border>
 
-        <!-- Preview label — topmost of the bottom section -->
         <TextBlock DockPanel.Dock="Bottom"
                    Text="PREVIEW"
                    FontSize="10"
                    Foreground="#888888"
                    Margin="6,4,6,2" />
 
-        <!-- ── Frame list (fills remaining space between top and bottom sections) ── -->
+        <Separator DockPanel.Dock="Bottom" Margin="0,2,0,2" />
+
+        <!-- FRAMES header + "+" button — last Bottom item, just above the frame list -->
+        <DockPanel DockPanel.Dock="Bottom" Margin="6,2,4,2">
+            <TextBlock Text="FRAMES"
+                       FontSize="10"
+                       Foreground="#888888"
+                       VerticalAlignment="Center" />
+            <Button DockPanel.Dock="Right"
+                    Content="+"
+                    Width="20" Height="18"
+                    Padding="0" FontSize="12"
+                    VerticalAlignment="Center"
+                    Click="OnAddFrame" />
+        </DockPanel>
+
+        <!-- ── Frame list (fills remaining space) ──
+             Each row shows a 40×40 thumbnail, the SpriteId label, a NumericUpDown
+             for DurationMs (two-way bound, min 1 / max 10000), and a × remove button.
+             PointerPressed on the row DockPanel starts a drag-to-reorder operation.
+             DragDrop.AllowDrop and Drop are wired in code-behind. -->
         <ListBox x:Name="FrameList"
                  MinHeight="60"
                  Margin="4,0,4,4">
             <ListBox.ItemTemplate>
                 <DataTemplate>
-                    <DockPanel Height="44" Margin="2,1">
+                    <!-- Background="Transparent" ensures the empty area is hit-testable
+                         for pointer-drag tracking. -->
+                    <DockPanel Height="46" Margin="2,1"
+                               Tag="{Binding}"
+                               Background="Transparent"
+                               PointerPressed="OnFrameRowPointerPressed">
 
-                        <!-- Thumbnail — 40×40 display box; pixel-exact via Stretch="Uniform" -->
+                        <!-- Thumbnail — 40×40 display box -->
                         <Border DockPanel.Dock="Left"
-                                Width="40"
-                                Height="40"
+                                Width="40" Height="40"
                                 Background="#111111"
-                                Margin="0,0,8,0"
+                                Margin="0,0,6,0"
                                 VerticalAlignment="Center">
                             <Image Source="{Binding Thumbnail}"
                                    Stretch="Uniform"
                                    RenderOptions.BitmapInterpolationMode="None" />
                         </Border>
 
-                        <!-- SpriteId + duration stacked vertically -->
-                        <StackPanel VerticalAlignment="Center">
+                        <!-- Remove button — far right; disabled when it is the only frame -->
+                        <Button DockPanel.Dock="Right"
+                                Content="×"
+                                Tag="{Binding}"
+                                Width="20" Height="20"
+                                Padding="0" FontSize="12"
+                                VerticalAlignment="Center"
+                                Margin="2,0,0,0"
+                                IsEnabled="{Binding CanRemove}"
+                                Click="OnFrameRemoveClick" />
+
+                        <!-- SpriteId label + duration editor -->
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
                             <TextBlock Text="{Binding SpriteIdText}" FontSize="12" />
-                            <TextBlock Text="{Binding DurationText}"
-                                       FontSize="11"
-                                       Foreground="#888888" />
+                            <NumericUpDown Value="{Binding DurationMs, Mode=TwoWay}"
+                                           Minimum="1"
+                                           Maximum="10000"
+                                           Increment="10"
+                                           Width="90"
+                                           Height="22"
+                                           FontSize="10"
+                                           Padding="2,0" />
                         </StackPanel>
 
                     </DockPanel>
