@@ -32,24 +32,90 @@
 
         <Separator DockPanel.Dock="Top" Margin="0,0,0,4" />
 
-        <!-- ── Frame list header ── -->
         <TextBlock DockPanel.Dock="Top"
                    Text="FRAMES"
                    FontSize="10"
                    Foreground="#888888"
                    Margin="6,0,6,2" />
 
-        <!-- ── Frame list (fills remaining vertical space) ──
-             Each row shows a cropped thumbnail, the SpriteId, and the DurationMs.
-             The thumbnail is rendered via RenderTargetBitmap crop in code-behind,
-             using the same DrawImage pattern as the ghost-tile preview. -->
+        <!-- ══ Bottom section ══════════════════════════════════════════════════
+             DockPanel processes Bottom-docked items in source order, each
+             consuming the bottom edge of the remaining space.  The first item
+             listed becomes the lowest; later items stack upward.
+             Visual order top→bottom:
+               PREVIEW label → 64×64 preview image → separator →
+               TIMELINE label → scrubber canvas → transport buttons          -->
+
+        <!-- Transport row — very bottom -->
+        <StackPanel DockPanel.Dock="Bottom"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Center"
+                    Margin="4,4,4,4"
+                    Spacing="2">
+            <Button x:Name="BtnStepBack"    Content="⏮" Width="28" Height="24"
+                    Padding="0" FontSize="11" Click="OnStepBack" />
+            <Button x:Name="BtnPlay"        Content="▶" Width="28" Height="24"
+                    Padding="0" FontSize="11" Click="OnPlay" />
+            <Button x:Name="BtnPause"       Content="⏸" Width="28" Height="24"
+                    Padding="0" FontSize="11" Click="OnPause" />
+            <Button x:Name="BtnStop"        Content="⏹" Width="28" Height="24"
+                    Padding="0" FontSize="11" Click="OnStop" />
+            <Button x:Name="BtnStepForward" Content="⏭" Width="28" Height="24"
+                    Padding="0" FontSize="11" Click="OnStepForward" />
+        </StackPanel>
+
+        <!-- Scrubber canvas — above transport.
+             Children (track bar, frame boundary marks, event flags, playhead line)
+             are added and positioned entirely in code-behind.
+             SizeChanged is wired in the constructor so markers reposition on resize. -->
+        <Canvas DockPanel.Dock="Bottom"
+                x:Name="TimelineCanvas"
+                Height="28"
+                Background="#1a1a1a"
+                Margin="4,0,4,2"
+                ClipToBounds="True"
+                PointerPressed="OnTimelinePointerPressed"
+                PointerMoved="OnTimelinePointerMoved"
+                PointerReleased="OnTimelinePointerReleased" />
+
+        <!-- Timeline label — above canvas -->
+        <TextBlock DockPanel.Dock="Bottom"
+                   Text="TIMELINE"
+                   FontSize="10"
+                   Foreground="#888888"
+                   Margin="6,4,6,2" />
+
+        <Separator DockPanel.Dock="Bottom" Margin="0,2,0,0" />
+
+        <!-- Live preview — 64×64 display area, frame scaled to fit (4× for 16×16 sprites).
+             BitmapInterpolationMode=None preserves the pixel-art look. -->
+        <Border DockPanel.Dock="Bottom"
+                Width="64"
+                Height="64"
+                Background="#111111"
+                HorizontalAlignment="Center"
+                Margin="4,0,4,4">
+            <Image x:Name="PreviewImage"
+                   Stretch="Uniform"
+                   RenderOptions.BitmapInterpolationMode="None" />
+        </Border>
+
+        <!-- Preview label — topmost of the bottom section -->
+        <TextBlock DockPanel.Dock="Bottom"
+                   Text="PREVIEW"
+                   FontSize="10"
+                   Foreground="#888888"
+                   Margin="6,4,6,2" />
+
+        <!-- ── Frame list (fills remaining space between top and bottom sections) ── -->
         <ListBox x:Name="FrameList"
+                 MinHeight="60"
                  Margin="4,0,4,4">
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <DockPanel Height="44" Margin="2,1">
 
-                        <!-- Thumbnail — 40×40 display box; content is pixel-exact via Stretch="Uniform" -->
+                        <!-- Thumbnail — 40×40 display box; pixel-exact via Stretch="Uniform" -->
                         <Border DockPanel.Dock="Left"
                                 Width="40"
                                 Height="40"
@@ -63,8 +129,7 @@
 
                         <!-- SpriteId + duration stacked vertically -->
                         <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="{Binding SpriteIdText}"
-                                       FontSize="12" />
+                            <TextBlock Text="{Binding SpriteIdText}" FontSize="12" />
                             <TextBlock Text="{Binding DurationText}"
                                        FontSize="11"
                                        Foreground="#888888" />

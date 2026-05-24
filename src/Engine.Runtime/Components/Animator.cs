@@ -58,6 +58,15 @@ public sealed class Animator : Component
     /// </summary>
     public bool IsComplete { get; private set; }
 
+    /// <summary>Total duration of the current clip in milliseconds. Zero when no clip is set.</summary>
+    public float TotalDurationMs => _totalDurationMs;
+
+    /// <summary>Current elapsed time within the clip in milliseconds.</summary>
+    public float ElapsedMs => _elapsedMs;
+
+    /// <summary>Current zero-based frame index within the active clip.</summary>
+    public int FrameIndex => _frameIndex;
+
     /// <summary>
     /// Raised inside <see cref="OnUpdate"/> each time an <see cref="AnimationEvent"/>
     /// marker is crossed.  All events skipped by a large delta fire in list order.
@@ -89,6 +98,58 @@ public sealed class Animator : Component
         CurrentSpriteId = clip.Frames.Count > 0
             ? clip.Frames[0].SpriteId
             : SpriteId.Empty;
+    }
+
+    /// <summary>
+    /// Seeks to <paramref name="ms"/> within the current clip <em>without firing events</em>.
+    /// Updates <see cref="CurrentSpriteId"/> and <see cref="FrameIndex"/> immediately.
+    /// Clamps to [0, <see cref="TotalDurationMs"/>].
+    /// No-op when no clip is set.
+    /// </summary>
+    /// <remarks>
+    /// Intended for editor scrubbing.  Game code that needs to jump clips should use
+    /// <see cref="Play"/> instead.
+    /// </remarks>
+    public void SeekMs(float ms)
+    {
+        if (_clip is null || _totalDurationMs <= 0f) return;
+        _elapsedMs      = System.Math.Clamp(ms, 0f, _totalDurationMs);
+        _frameIndex     = ComputeFrameIndex(_elapsedMs);
+        CurrentSpriteId = _clip.Frames[_frameIndex].SpriteId;
+        _prevFrameIndex = _frameIndex;
+        IsComplete      = false;
+    }
+
+    /// <summary>
+    /// Seeks to the start of the next frame without firing events.
+    /// On a looping clip wraps from the last frame back to frame 0.
+    /// On a non-looping clip clamps at the last frame.
+    /// No-op when no clip is set.
+    /// </summary>
+    public void StepForward()
+    {
+        if (_clip is null || _clip.Frames.Count == 0) return;
+        int last = _clip.Frames.Count - 1;
+        int next = _frameIndex < last ? _frameIndex + 1
+                 : _clip.Loops        ? 0
+                                      : last;
+        SeekMs(_frameStarts[next]);
+    }
+
+    /// <summary>
+    /// Seeks to the start of the previous frame without firing events.
+    /// On a looping clip wraps from frame 0 back to the last frame.
+    /// On a non-looping clip clamps at frame 0.
+    /// No-op when no clip is set.
+    /// </summary>
+    public void StepBack()
+    {
+        if (_clip is null || _clip.Frames.Count == 0) return;
+        int last = _clip.Frames.Count - 1;
+        int prev = _frameIndex > 0 ? _frameIndex - 1
+                 : _clip.Loops     ? last
+                                   : 0;
+        SeekMs(_frameStarts[prev]);
     }
 
     // ── Component lifecycle ───────────────────────────────────────────────────
