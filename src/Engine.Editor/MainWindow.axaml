@@ -19,7 +19,8 @@
                 <MenuItem x:Name="MenuOpenScene"     Header="_Open Scene..." />
                 <MenuItem x:Name="MenuSaveScene"     Header="_Save Scene" />
                 <Separator />
-                <MenuItem x:Name="MenuImportTileset" Header="_Import Tileset..." />
+                <MenuItem x:Name="MenuImportTileset"     Header="_Import Tileset..." />
+                <MenuItem x:Name="MenuImportSpritesheet" Header="_Import Spritesheet (Aseprite JSON)..." />
                 <Separator />
                 <MenuItem x:Name="MenuLoadFixture"   Header="Load Test _Fixture" />
                 <Separator />

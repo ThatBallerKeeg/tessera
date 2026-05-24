@@ -60,8 +60,9 @@ public partial class MainWindow : Window
         MenuNewScene.Click      += OnNewScene;
         MenuOpenScene.Click     += OnOpenScene;
         MenuSaveScene.Click     += OnSaveScene;
-        MenuImportTileset.Click += OnImportTilesetMenu;
-        MenuLoadFixture.Click   += OnLoadTestFixture;
+        MenuImportTileset.Click     += OnImportTilesetMenu;
+        MenuImportSpritesheet.Click += OnImportSpritesheetMenu;
+        MenuLoadFixture.Click       += OnLoadTestFixture;
         MenuExit.Click          += (_, _) => Close();
 
         // Assets panel (shows tilesets and spritesheet bundles in one merged list).
@@ -175,6 +176,104 @@ public partial class MainWindow : Window
 
         RebuildAllAssets();
         ActivateTileset(tileset, avBitmap);
+    }
+
+    // ── Spritesheet import (Aseprite JSON) ───────────────────────────────────
+
+    private async void OnImportSpritesheetMenu(object? sender, RoutedEventArgs e)
+    {
+        var files = await GetTopLevel(this)!.StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                Title = "Import Spritesheet (Aseprite JSON)",
+                AllowMultiple = false,
+                FileTypeFilter =
+                [
+                    new FilePickerFileType("Aseprite JSON") { Patterns = ["*.json"] },
+                    new FilePickerFileType("All Files")     { Patterns = ["*"] },
+                ],
+            });
+
+        if (files is not [var file]) return;
+        string jsonPath = file.Path.LocalPath;
+
+        string json;
+        try
+        {
+            json = await File.ReadAllTextAsync(jsonPath);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Editor] Failed to read Aseprite JSON: {ex.Message}");
+            return;
+        }
+
+        SpritesheetData sheet;
+        IReadOnlyList<AnimationClip> clips;
+        try
+        {
+            (sheet, clips) = AsepriteImporter.Import(json);
+        }
+        catch (InvalidDataException ex)
+        {
+            Console.Error.WriteLine($"[Editor] Failed to parse Aseprite JSON: {ex.Message}");
+            return;
+        }
+
+        // Resolve image path relative to the JSON file so the sheet can be loaded
+        // even when the PNG and JSON are in the same directory.
+        string jsonDir = Path.GetDirectoryName(jsonPath) ?? "";
+        string resolvedImagePath = Path.IsPathRooted(sheet.ImagePath)
+            ? sheet.ImagePath
+            : Path.Combine(jsonDir, sheet.ImagePath);
+        sheet.ImagePath = resolvedImagePath;
+
+        Bitmap avBitmap;
+        try
+        {
+            avBitmap = new Bitmap(resolvedImagePath);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Editor] Failed to load spritesheet image '{resolvedImagePath}': {ex.Message}");
+            return;
+        }
+
+        // Save sidecar JSON files alongside the scene (or next to the source JSON as
+        // a fallback when no scene has been saved yet).
+        try
+        {
+            string projectDir = _currentPath is not null
+                ? Path.GetDirectoryName(_currentPath)!
+                : jsonDir;
+            string spritesDir = Path.Combine(projectDir, "Assets", "Sprites");
+            string animsDir   = Path.Combine(projectDir, "Assets", "Animations");
+            Directory.CreateDirectory(spritesDir);
+            Directory.CreateDirectory(animsDir);
+
+            SpritesheetSerializer.Save(sheet,
+                Path.Combine(spritesDir, sheet.Name + ".spritesheet.json"));
+
+            foreach (var clip in clips)
+                AnimationClipSerializer.Save(clip,
+                    Path.Combine(animsDir, $"{sheet.Name}_{clip.Name}.clip.json"));
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Editor] Failed to save sidecar JSON: {ex.Message}");
+        }
+
+        // Register in the Assets panel, replacing any existing entry with the same name.
+        SpritesheetBundle? existing = null;
+        foreach (var b in _importedSpritesheets)
+            if (b.Name == sheet.Name) { existing = b; break; }
+
+        if (existing is not null) _importedSpritesheets.Remove(existing);
+
+        var bundle = new SpritesheetBundle(sheet, avBitmap, clips);
+        _importedSpritesheets.Add(bundle);
+        RebuildAllAssets();
+        ActivateSpritesheet(bundle);
     }
 
     private void ActivateTileset(TilesetData tileset, Bitmap avBitmap)
