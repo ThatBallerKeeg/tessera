@@ -50,19 +50,43 @@
 
                 <!-- Scene panel -->
                 <Border Grid.Row="0" Padding="6">
-                    <StackPanel>
-                        <TextBlock Text="SCENE"
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top"
+                                   Text="SCENE"
                                    FontSize="10"
                                    FontWeight="Bold"
-                                   Margin="0,0,0,8" />
-                        <DockPanel>
+                                   Margin="0,0,0,4" />
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                             <TextBlock DockPanel.Dock="Left"
                                        Text="Name:"
                                        VerticalAlignment="Center"
                                        Margin="0,0,6,0" />
                             <TextBox x:Name="SceneNameBox" />
                         </DockPanel>
-                    </StackPanel>
+                        <!-- GAME OBJECTS header + "+" button -->
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,2">
+                            <Button DockPanel.Dock="Right"
+                                    x:Name="BtnAddGameObject"
+                                    Content="+"
+                                    Width="20" Height="18"
+                                    Padding="0" FontSize="12"
+                                    VerticalAlignment="Center"
+                                    Click="OnAddGameObject" />
+                            <TextBlock Text="GAME OBJECTS"
+                                       FontSize="10"
+                                       Foreground="#888888"
+                                       VerticalAlignment="Center" />
+                        </DockPanel>
+                        <!-- ListBox fills remaining space in the panel -->
+                        <ListBox x:Name="GameObjectsList"
+                                 MinHeight="40">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}" Padding="2,1" />
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
                 </Border>
 
                 <GridSplitter Grid.Row="1"
@@ -93,8 +117,26 @@
                           VerticalAlignment="Stretch"
                           ResizeDirection="Columns" />
 
-            <!-- ── Viewport panel ── -->
-            <viewport:MonoGameViewport x:Name="MainViewport" Grid.Column="2" />
+            <!-- ── Viewport panel (Play/Stop toolbar + MonoGame canvas) ── -->
+            <DockPanel Grid.Column="2">
+                <StackPanel DockPanel.Dock="Top"
+                            Orientation="Horizontal"
+                            Margin="4,2,4,2"
+                            Spacing="4">
+                    <Button x:Name="BtnPlayScene"
+                            Content="▶ Play"
+                            Width="64" Height="22"
+                            Padding="0" FontSize="11"
+                            Click="OnPlayScene" />
+                    <Button x:Name="BtnStopScene"
+                            Content="⏹ Stop"
+                            Width="64" Height="22"
+                            Padding="0" FontSize="11"
+                            IsEnabled="False"
+                            Click="OnStopScene" />
+                </StackPanel>
+                <viewport:MonoGameViewport x:Name="MainViewport" />
+            </DockPanel>
 
             <!-- Right vertical splitter (Viewport | Tilemap) -->
             <GridSplitter Grid.Column="3"
@@ -123,11 +165,28 @@
 
             <!-- ── Inspector panel ── -->
             <Border Grid.Column="6" Padding="6">
-                <StackPanel>
-                    <TextBlock Text="INSPECTOR"
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="INSPECTOR"
                                FontSize="10"
-                               FontWeight="Bold" />
-                </StackPanel>
+                               FontWeight="Bold"
+                               Margin="0,0,0,4" />
+                    <!-- Add Component — pinned to the bottom -->
+                    <StackPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+                        <TextBlock Text="ADD COMPONENT"
+                                   FontSize="9"
+                                   Foreground="#888888"
+                                   Margin="0,0,0,2" />
+                        <ComboBox x:Name="AddComponentBox"
+                                  IsEnabled="False"
+                                  HorizontalAlignment="Stretch"
+                                  SelectionChanged="OnAddComponentSelected" />
+                    </StackPanel>
+                    <!-- Dynamic component list fills remaining space -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="InspectorContent" />
+                    </ScrollViewer>
+                </DockPanel>
             </Border>
 
         </Grid>

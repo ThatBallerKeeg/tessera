@@ -1,5 +1,8 @@
 using System.Reflection;
+using Engine.Core.Sprites;
 using Engine.Core.Tiles;
+using Engine.Runtime.Components;
+using Engine.Runtime.Entities;
 using Engine.Runtime.Tiles;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -67,6 +70,13 @@ public class ViewportGame : EngineGame
     // Queued setup applied on the next Update tick (must be on the MonoGame/main thread).
     private (TilemapData Layer, TilesetData Tileset, string Path)? _pendingSetup;
 
+    // ── Play mode ─────────────────────────────────────────────────────────────
+
+    // Pending scene activation: carries texture-load work to the MonoGame thread.
+    private (Scene Scene, SpritesheetData Sheet, string ImagePath)? _pendingPlaySetup;
+    private Texture2D?        _sceneTexture;
+    private SpriteBatchAdapter? _sceneAdapter;
+
     /// <summary>True once <see cref="StartManual"/> has completed successfully.</summary>
     public bool IsReady { get; private set; }
 
@@ -88,6 +98,37 @@ public class ViewportGame : EngineGame
     public void SetTilemapSetup(TilemapData layer, TilesetData tileset, string imagePath)
     {
         _pendingSetup = (layer, tileset, imagePath);
+    }
+
+    // ── Play mode public API ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Activates a live scene for update+draw.
+    /// If <paramref name="sheet"/> and <paramref name="imagePath"/> are provided the sprite
+    /// texture is loaded on the next MonoGame tick and wired to all
+    /// <see cref="SpriteRenderer"/> components in the scene.
+    /// Passing <see langword="null"/> for <paramref name="scene"/> is equivalent to calling
+    /// <see cref="StopPlay"/>.
+    /// </summary>
+    public void StartPlay(Scene? scene, SpritesheetData? sheet, string? imagePath)
+    {
+        if (scene is null) { StopPlay(); return; }
+
+        if (sheet is not null && !string.IsNullOrEmpty(imagePath))
+            _pendingPlaySetup = (scene, sheet, imagePath);
+        else
+            _activeScene = scene;   // no texture needed (test fixture / in-memory bitmap)
+    }
+
+    /// <summary>
+    /// Deactivates the live scene and releases the scene sprite texture.
+    /// </summary>
+    public void StopPlay()
+    {
+        _activeScene      = null;
+        _pendingPlaySetup = null;
+        _sceneTexture?.Dispose();
+        _sceneTexture = null;
     }
 
     // ── MonoGame overrides ────────────────────────────────────────────────────
@@ -149,6 +190,34 @@ public class ViewportGame : EngineGame
             }
         }
 
+        // Process any pending play-mode scene setup.
+        if (_pendingPlaySetup is { } playSetup)
+        {
+            _pendingPlaySetup = null;
+            try
+            {
+                _sceneTexture?.Dispose();
+                using var stream = File.OpenRead(playSetup.ImagePath);
+                _sceneTexture = Texture2D.FromStream(GraphicsDevice, stream);
+
+                // Wire the loaded texture into every SpriteRenderer in the scene.
+                foreach (var go in playSetup.Scene.GameObjects)
+                {
+                    if (go.GetComponent<SpriteRenderer>() is { } sr)
+                    {
+                        sr.Spritesheet = playSetup.Sheet;
+                        sr.Texture     = _sceneTexture;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ViewportGame] Failed to load scene texture: {ex.Message}");
+            }
+
+            _activeScene = playSetup.Scene;
+        }
+
         base.Update(gameTime);
     }
 
@@ -191,7 +260,7 @@ public class ViewportGame : EngineGame
     /// <summary>Override to render scene content into the viewport render target.</summary>
     protected virtual void DrawViewportContent(GameTime gameTime)
     {
-        if (_tilemapRenderer is null || _spriteBatch is null) return;
+        if (_spriteBatch is null) return;
 
         float panX = _cameraPanX;
         float panY = _cameraPanY;
@@ -209,11 +278,24 @@ public class ViewportGame : EngineGame
         var matrix = Matrix.CreateTranslation(-panX, -panY, 0f)
                    * Matrix.CreateScale(zoom, zoom, 1f);
 
-        var clock = new TilemapClock((long)gameTime.TotalGameTime.TotalMilliseconds);
+        // ── Tilemap pass ──────────────────────────────────────────────────────
+        if (_tilemapRenderer is not null)
+        {
+            var clock = new TilemapClock((long)gameTime.TotalGameTime.TotalMilliseconds);
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: matrix);
+            _tilemapRenderer.Render(worldCamera, _spriteBatch, ctx => ctx.Texture, clock);
+            _spriteBatch.End();
+        }
 
-        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: matrix);
-        _tilemapRenderer.Render(worldCamera, _spriteBatch, ctx => ctx.Texture, clock);
-        _spriteBatch.End();
+        // ── Scene entity pass (play mode) ─────────────────────────────────────
+        if (_activeScene is not null)
+        {
+            // SpriteBatchAdapter is allocation-free once created; reuse across frames.
+            _sceneAdapter ??= new SpriteBatchAdapter(_spriteBatch);
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: matrix);
+            _activeScene.Draw(_sceneAdapter);
+            _spriteBatch.End();
+        }
     }
 
     // ── Public thread-safe API ────────────────────────────────────────────────
@@ -282,6 +364,7 @@ public class ViewportGame : EngineGame
             _spriteBatch?.Dispose();
             _tilemapRenderer?.Dispose();
             _tilesetTexture?.Dispose();
+            _sceneTexture?.Dispose();
         }
         base.Dispose(disposing);
     }

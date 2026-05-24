@@ -8,7 +8,9 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;   // Bitmap, RenderTargetBitmap, WriteableBitmap
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Engine.Core.Sprites;
 using Engine.Core.Tiles;
+using Engine.Runtime.Entities;
 using Engine.Runtime.Viewport;
 
 namespace Engine.Editor.Viewport;
@@ -149,6 +151,20 @@ public partial class MonoGameViewport : UserControl
     {
         _game?.SetTilemapSetup(layer, tileset, imagePath);
     }
+
+    // ── Play-mode support ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Starts running <paramref name="scene"/> in the viewport.
+    /// If <paramref name="sheet"/> and <paramref name="imagePath"/> are provided the PNG is
+    /// loaded on the next MonoGame tick and wired to all SpriteRenderers in the scene.
+    /// </summary>
+    public void StartPlay(Scene? scene, SpritesheetData? sheet, string? imagePath)
+        => _game?.StartPlay(scene, sheet, imagePath);
+
+    /// <summary>Stops play mode and releases the scene's sprite texture.</summary>
+    public void StopPlay()
+        => _game?.StopPlay();
 
     // ── Preview canvas ────────────────────────────────────────────────────────
 

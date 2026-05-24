@@ -1,9 +1,12 @@
 using System.Collections.ObjectModel;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
@@ -15,6 +18,8 @@ using Engine.Core.Sprites;
 using Engine.Core.Tiles;
 using Engine.Editor.Animation;
 using Engine.Editor.Tilemap;
+using Engine.Runtime.Components;
+using Engine.Runtime.Entities;
 
 namespace Engine.Editor;
 
@@ -45,6 +50,14 @@ public partial class MainWindow : Window
     // Merged asset list shown in the Assets panel (TilesetData | SpritesheetBundle).
     private readonly ObservableCollection<object>  _allAssets = new();
 
+    // Scene GameObject list displayed in the Scene panel.
+    private readonly ObservableCollection<GameObjectData> _sceneObjectItems = new();
+    private GameObjectData? _selectedGameObject;
+
+    // Play mode.
+    private bool _isPlayMode;
+    private bool _suppressComponentComboChanged;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -68,6 +81,18 @@ public partial class MainWindow : Window
         // Assets panel (shows tilesets and spritesheet bundles in one merged list).
         AssetsList.ItemsSource      = _allAssets;
         AssetsList.SelectionChanged += OnAssetSelected;
+
+        // Scene GameObjects list.
+        GameObjectsList.ItemsSource      = _sceneObjectItems;
+        GameObjectsList.SelectionChanged += OnGameObjectSelected;
+        BtnAddGameObject.Click           += OnAddGameObject;
+
+        // Viewport play/stop.
+        BtnPlayScene.Click += OnPlayScene;
+        BtnStopScene.Click += OnStopScene;
+
+        // Inspector: pre-populate the Add Component dropdown.
+        AddComponentBox.ItemsSource = new[] { "SpriteRenderer", "Animator" };
 
         // Tilemap tool panel.
         TilemapPanel.SetLayers([_activeLayer]);
@@ -587,6 +612,9 @@ public partial class MainWindow : Window
 
     private void OnNewScene(object? sender, RoutedEventArgs e)
     {
+        // Stop any active play session before wiping state.
+        if (_isPlayMode) StopPlayMode();
+
         _scene = new SceneData();
         _activeLayer = new TilemapData { LayerName = "floor", LayerIndex = 0 };
         _scene.Tilemaps.Add(_activeLayer);
@@ -599,6 +627,12 @@ public partial class MainWindow : Window
         _activeBundle = null;
         _allAssets.Clear();
         AnimationPanel.SetContent(null, null, null);
+
+        _sceneObjectItems.Clear();
+        _selectedGameObject      = null;
+        AddComponentBox.IsEnabled = false;
+        RebuildInspector();
+
         SceneNameBox.Text = _scene.Name;
         TilemapPanel.SetLayers([_activeLayer]);
         MainViewport.SetGhostTile(null, 0, 0, 0, 0);
@@ -668,6 +702,234 @@ public partial class MainWindow : Window
         SceneSerializer.Save(_scene, stream);
         _currentPath = file.Path.LocalPath;
         Title = $"Tessera Engine Editor — {Path.GetFileName(_currentPath)}";
+    }
+
+    // ── Scene GameObjects ─────────────────────────────────────────────────────
+
+    private void OnAddGameObject(object? sender, RoutedEventArgs e)
+    {
+        int n  = _scene.GameObjects.Count + 1;
+        var go = new GameObjectData { Name = $"GameObject {n}" };
+        _scene.GameObjects.Add(go);
+        _sceneObjectItems.Add(go);
+        GameObjectsList.SelectedItem = go;
+    }
+
+    private void OnGameObjectSelected(object? sender, SelectionChangedEventArgs e)
+    {
+        _selectedGameObject       = GameObjectsList.SelectedItem as GameObjectData;
+        AddComponentBox.IsEnabled = _selectedGameObject is not null;
+        RebuildInspector();
+    }
+
+    // ── Inspector ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Rebuilds the Inspector panel to reflect the currently selected GameObject.
+    /// Shows the GameObject name, one section per attached component (with editable
+    /// Clip picker for Animator), and is cleared when nothing is selected.
+    /// </summary>
+    private void RebuildInspector()
+    {
+        InspectorContent.Children.Clear();
+
+        if (_selectedGameObject is null)
+        {
+            InspectorContent.Children.Add(new TextBlock
+            {
+                Text       = "Select a GameObject",
+                Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
+                FontSize   = 11,
+                Margin     = new Thickness(0, 4, 0, 0),
+            });
+            return;
+        }
+
+        // ── GameObject name ───────────────────────────────────────────────────
+        InspectorContent.Children.Add(new TextBlock
+        {
+            Text       = _selectedGameObject.Name,
+            FontWeight = FontWeight.Bold,
+            FontSize   = 13,
+            Margin     = new Thickness(0, 0, 0, 6),
+        });
+
+        // ── One section per component ─────────────────────────────────────────
+        foreach (var cd in _selectedGameObject.Components)
+        {
+            // Component type header
+            InspectorContent.Children.Add(new TextBlock
+            {
+                Text       = cd.TypeName,
+                FontSize   = 11,
+                FontWeight = FontWeight.SemiBold,
+                Background = new SolidColorBrush(Color.FromRgb(0x28, 0x28, 0x38)),
+                Margin     = new Thickness(-4, 4, -4, 2),
+                Padding    = new Thickness(4, 2),
+            });
+
+            switch (cd.TypeName)
+            {
+                case "SpriteRenderer":
+                {
+                    string sheetName = _activeBundle?.Sheet.Name ?? "(no spritesheet)";
+                    InspectorContent.Children.Add(BuildFieldRow("Sheet", new TextBlock
+                    {
+                        Text              = sheetName,
+                        FontSize          = 11,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    }));
+                    break;
+                }
+
+                case "Animator":
+                {
+                    // Clip picker: ComboBox populated from the active spritesheet's clips.
+                    string currentClip = "";
+                    if (cd.Fields.TryGetValue("clipName", out var clipEl))
+                        currentClip = clipEl.GetString() ?? "";
+
+                    var clipNames = new List<string>();
+                    if (_activeBundle is not null)
+                        foreach (var clip in _activeBundle.Clips)
+                            clipNames.Add(clip.Name);
+
+                    var clipBox = new ComboBox
+                    {
+                        ItemsSource         = clipNames,
+                        SelectedItem        = string.IsNullOrEmpty(currentClip) ? null : (object)currentClip,
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                        FontSize            = 11,
+                        Height              = 24,
+                        Tag                 = cd,   // carry the ComponentData reference
+                    };
+                    clipBox.SelectionChanged += OnClipComboChanged;
+                    InspectorContent.Children.Add(BuildFieldRow("Clip", clipBox));
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>Builds a two-column label + field row for the Inspector.</summary>
+    private static Panel BuildFieldRow(string label, Control field)
+    {
+        var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
+        var lbl = new TextBlock
+        {
+            Text              = label + ":",
+            FontSize          = 11,
+            Width             = 42,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        DockPanel.SetDock(lbl, Dock.Left);
+        row.Children.Add(lbl);
+        row.Children.Add(field);
+        return row;
+    }
+
+    /// <summary>
+    /// Handles clip selection in the Animator inspector row.
+    /// Persists the chosen clip name into the <see cref="ComponentData.Fields"/> dict.
+    /// </summary>
+    private void OnClipComboChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ComboBox combo) return;
+        if (combo.Tag is not ComponentData cd) return;
+        if (combo.SelectedItem is not string clipName) return;
+
+        // Store as a JSON string element so ComponentData.Fields round-trips cleanly.
+        string jsonStr = JsonSerializer.Serialize(clipName);
+        using var tmpDoc = JsonDocument.Parse(jsonStr);
+        cd.Fields["clipName"] = tmpDoc.RootElement.Clone();
+    }
+
+    /// <summary>
+    /// Handles "Add Component" dropdown selection.
+    /// Appends a new <see cref="ComponentData"/> to the selected GameObject and rebuilds
+    /// the Inspector.  Duplicate types are silently skipped.
+    /// </summary>
+    private void OnAddComponentSelected(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressComponentComboChanged) return;
+        if (_selectedGameObject is null) return;
+        if (AddComponentBox.SelectedItem is not string typeName) return;
+
+        // Reset the ComboBox selection without re-entering this handler.
+        _suppressComponentComboChanged = true;
+        AddComponentBox.SelectedIndex = -1;
+        _suppressComponentComboChanged = false;
+
+        // Skip if this type is already attached.
+        foreach (var cd in _selectedGameObject.Components)
+            if (cd.TypeName == typeName) return;
+
+        _selectedGameObject.Components.Add(new ComponentData { TypeName = typeName });
+        RebuildInspector();
+    }
+
+    // ── Play mode ─────────────────────────────────────────────────────────────
+
+    private void OnPlayScene(object? sender, RoutedEventArgs e)
+    {
+        if (_isPlayMode) return;
+        _isPlayMode            = true;
+        BtnPlayScene.IsEnabled = false;
+        BtnStopScene.IsEnabled = true;
+
+        // Instantiate the live scene from the current SceneData.
+        var liveScene = SceneLoader.Load(_scene);
+
+        // Wire Animator components to their configured clip from the active bundle.
+        if (_activeBundle is { } bundle)
+        {
+            foreach (var go in liveScene.GameObjects)
+            {
+                if (go.GetComponent<Animator>() is not { } animator) continue;
+
+                // Locate the matching GameObjectData to read ComponentData.Fields.
+                GameObjectData? goData = null;
+                foreach (var gd in _scene.GameObjects)
+                    if (gd.Id == go.Id) { goData = gd; break; }
+                if (goData is null) continue;
+
+                ComponentData? animData = null;
+                foreach (var cd in goData.Components)
+                    if (cd.TypeName == "Animator") { animData = cd; break; }
+                if (animData is null) continue;
+
+                if (!animData.Fields.TryGetValue("clipName", out var clipEl)) continue;
+                string clipName = clipEl.GetString() ?? "";
+
+                AnimationClip? targetClip = null;
+                foreach (var clip in bundle.Clips)
+                    if (clip.Name == clipName) { targetClip = clip; break; }
+
+                if (targetClip is not null)
+                    animator.Play(targetClip);
+            }
+        }
+
+        // Start the viewport; it loads the sprite texture on the next MonoGame tick.
+        MainViewport.StartPlay(liveScene, _activeBundle?.Sheet, _activeBundle?.Sheet.ImagePath);
+
+        Console.WriteLine("[Editor] Play mode started.");
+    }
+
+    private void OnStopScene(object? sender, RoutedEventArgs e)
+    {
+        if (!_isPlayMode) return;
+        StopPlayMode();
+    }
+
+    /// <summary>Shared stop-play logic (called from button handler and scene reset).</summary>
+    private void StopPlayMode()
+    {
+        _isPlayMode            = false;
+        BtnPlayScene.IsEnabled = true;
+        BtnStopScene.IsEnabled = false;
+        MainViewport.StopPlay();
+        Console.WriteLine("[Editor] Play mode stopped.");
     }
 
     // ── Assets panel ──────────────────────────────────────────────────────────
